@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Decal.Adapter;
 using DaraletPlayer.Feed;
@@ -13,6 +14,9 @@ namespace DaraletPlayer.Ui {
     internal partial class InventoryBrowser {
         /// <summary>How long after a change to a carried pack it's appraised again, for Decal to hear its new tags.</summary>
         private static readonly TimeSpan CarriedRefreshDelay = TimeSpan.FromSeconds(1);
+
+        /// <summary>How often the bank reply, with the carried packs' tags, is asked for while a carried pack's are shown.</summary>
+        private static readonly TimeSpan CarriedTagsRefresh = TimeSpan.FromSeconds(5);
 
         /// <summary>
         /// The pack's tags as last sent, kept until the server's next bank reply (or, for a pack you carry, its next
@@ -30,6 +34,17 @@ namespace DaraletPlayer.Ui {
         private int refreshPack;
         private DateTime refreshAt;
 
+        /// <summary>
+        /// A carried pack appraised again after a change, and when to show the tags Decal then has for it, whatever was
+        /// sent: if the change went to another pack, the list shows the pack as it is rather than as it was meant to be.
+        /// </summary>
+        private int adoptPack;
+        private DateTime adoptAt;
+
+        /// <summary>The carried pack last changed, and when, for the bank reply that has the change.</summary>
+        private int sentPack;
+        private DateTime sentAt;
+
         /// <summary>The carried packs appraised for their tags when first shown.</summary>
         private readonly HashSet<int> appraisedPacks = new HashSet<int>();
 
@@ -38,6 +53,30 @@ namespace DaraletPlayer.Ui {
         private void RenderPackSettings(Holder holder) {
             if (holder.CarriedPack) {
                 RefreshCarried(holder);
+
+                // the Inventory window can be open without the tab that asks for the bank reply
+                feed.RefreshBank(CarriedTagsRefresh);
+            }
+
+            // the tags the server has, once a bank reply asked for after the change has come (BankInfo.Carried)
+            if (sentPack == holder.Id && feed.Bank?.Carried != null && feed.BankAskedAt > sentAt) {
+                sentPack = 0;
+                adoptPack = 0;
+
+                // straight from the reply: the pack list's snapshot can be half a second behind it
+                var fromServer = feed.Bank.Carried.FirstOrDefault(p => p.Guid == unchecked((uint)holder.Id));
+                if (fromServer != null) {
+                    inscriptionFor = holder.Id;
+                    inscriptionSeen = holder.Inscription;
+                    inscription = fromServer.Inscription ?? "";
+                }
+            }
+
+            // else Decal's, once it's appraised the pack again (an older server)
+            if (adoptPack == holder.Id && refreshPack != holder.Id && DateTime.UtcNow >= adoptAt
+                && feed.Bank?.Carried == null) {
+                adoptPack = 0;
+                inscriptionSeen = null;
             }
 
             if (inscriptionFor != holder.Id || holder.Inscription != inscriptionSeen) {
@@ -57,21 +96,40 @@ namespace DaraletPlayer.Ui {
 
         private void SetTags(Holder holder, string tags) {
             inscription = tags;
-            SendPackCommand(holder, BankCommands.Inscribe(holder.PackNumber, tags));
+            SendPackCommand(holder, BankCommands.Inscribe(holder.PackNumber, tags, PackId(holder)));
         }
 
         /// <summary>
-        /// A pack you carry has no number in /bank packs, so the command goes without one and the server takes the pack
-        /// last examined: it's appraised just before, which the server hears first (both go the same way, in order).
+        /// The id a command names a pack you carry by, or 0 on a server that doesn't take one (PlayerFeed.FeaturePackId).
+        /// A bank pack goes by its number in /bank packs.
+        /// </summary>
+        private uint PackId(Holder holder) {
+            return holder.CarriedPack && feed.HasFeature(PlayerFeed.FeaturePackId) ? unchecked((uint)holder.Id) : 0;
+        }
+
+        /// <summary>
+        /// A pack you carry has no number in /bank packs, so the command names it by its id. An older server only takes
+        /// the pack last examined, so there it's appraised just before; but anything appraised in between (another
+        /// add-on, or this list's own appraisal of the pack changed before) takes the change instead, which put one
+        /// pack's tags on another while the list showed them where they were meant to go.
         /// </summary>
         private void SendPackCommand(Holder holder, string command) {
             if (holder.CarriedPack) {
-                CoreManager.Current.Actions.RequestId(holder.Id);
+                if (PackId(holder) == 0) {
+                    CoreManager.Current.Actions.RequestId(holder.Id);
+                }
+
                 refreshPack = holder.Id;
                 refreshAt = DateTime.UtcNow + CarriedRefreshDelay;
+                adoptPack = 0;
+                sentPack = holder.Id;
+                sentAt = DateTime.UtcNow;
             }
 
             feed.SendCommand(command);
+
+            // sent after the command, so the reply has the change (a carried pack's tags too, from a newer server)
+            feed.RefreshBankSoon();
         }
 
         /// <summary>
@@ -82,6 +140,8 @@ namespace DaraletPlayer.Ui {
             if (refreshPack == holder.Id && DateTime.UtcNow >= refreshAt) {
                 refreshPack = 0;
                 CoreManager.Current.Actions.RequestId(holder.Id);
+                adoptPack = holder.Id;
+                adoptAt = DateTime.UtcNow + CarriedRefreshDelay;
                 return;
             }
 
@@ -92,7 +152,9 @@ namespace DaraletPlayer.Ui {
         }
 
         private string CarriedNote(Holder holder) {
-            return holder.CarriedPack ? " The pack is examined first, so the command knows which pack you mean." : "";
+            return PackId(holder) == 0 && holder.CarriedPack
+                ? " The pack is examined first, so the command knows which pack you mean."
+                : "";
         }
 
         /// <summary>Every word /bank inscribe knows, ticked when the pack has it.</summary>
@@ -106,14 +168,14 @@ namespace DaraletPlayer.Ui {
             ImGui.SetNextWindowSizeConstraints(new Vector2(font * 33, 0), new Vector2(float.MaxValue, font * 30));
 
             if (!ImGui.BeginCombo("##bank-tag-list", preview, ImGuiComboFlags.HeightLarge)) {
-                Widgets.Tip($"What this pack collects, for deposits, withdrawals and sorts. Tick the words in the list: each tick tags the pack at once ({BankCommands.Inscribe(holder.PackNumber, "...")})." + CarriedNote(holder));
+                Widgets.Tip($"What this pack collects, for deposits, withdrawals and sorts. Tick the words in the list: each tick tags the pack at once ({BankCommands.Inscribe(holder.PackNumber, "...", PackId(holder))})." + CarriedNote(holder));
                 return;
             }
 
             if (ImGui.Selectable("Clear all tags", false, ImGuiSelectableFlags.DontClosePopups)) {
                 SetTags(holder, "");
             }
-            Widgets.Tip($"Takes every tag off this pack: {BankCommands.Inscribe(holder.PackNumber, "")}.");
+            Widgets.Tip($"Takes every tag off this pack: {BankCommands.Inscribe(holder.PackNumber, "", PackId(holder))}.");
             ImGui.Separator();
 
             RenderPackRoles(holder);
@@ -155,7 +217,7 @@ namespace DaraletPlayer.Ui {
             if (ImGui.Checkbox($"{label}##tag-role-{tag}", ref has)) {
                 SetTags(holder, BankCommands.ToggleTag(inscription, tag));
             }
-            Widgets.Tip($"{tip} ({BankCommands.Inscribe(holder.PackNumber, tag)})" + CarriedNote(holder));
+            Widgets.Tip($"{tip} ({BankCommands.Inscribe(holder.PackNumber, tag, PackId(holder))})" + CarriedNote(holder));
         }
 
         /// <summary>
@@ -266,14 +328,14 @@ namespace DaraletPlayer.Ui {
             ImGui.SetNextWindowSizeConstraints(new Vector2(font * 30, 0), new Vector2(float.MaxValue, font * 30));
 
             if (!ImGui.BeginCombo("##bank-icon-list", "Icon", ImGuiComboFlags.HeightLarge)) {
-                Widgets.Tip($"Changes this pack's icon to a pack, sack or pouch in a color ({BankCommands.Icon(holder.PackNumber, "<style>", "<color>")}). Only the icon changes." + CarriedNote(holder));
+                Widgets.Tip($"Changes this pack's icon to a pack, sack or pouch in a color ({BankCommands.Icon(holder.PackNumber, "<style>", "<color>", PackId(holder))}). Only the icon changes." + CarriedNote(holder));
                 return;
             }
 
             if (ImGui.Selectable("Its own icon")) {
-                SendPackCommand(holder, BankCommands.IconDefault(holder.PackNumber));
+                SendPackCommand(holder, BankCommands.IconDefault(holder.PackNumber, PackId(holder)));
             }
-            Widgets.Tip($"Gives the pack back the icon it came with: {BankCommands.IconDefault(holder.PackNumber)}.");
+            Widgets.Tip($"Gives the pack back the icon it came with: {BankCommands.IconDefault(holder.PackNumber, PackId(holder))}.");
 
             var drawList = ImGui.GetWindowDrawList();
             var swatch = ImGui.GetTextLineHeight() * 0.8f;
@@ -285,7 +347,7 @@ namespace DaraletPlayer.Ui {
 
                 for (var i = 0; i < colors.Length; i++) {
                     var color = colors[i];
-                    var command = BankCommands.Icon(holder.PackNumber, iconStyle, color);
+                    var command = BankCommands.Icon(holder.PackNumber, iconStyle, color, PackId(holder));
 
                     if (i % perRow != 0) {
                         ImGui.SameLine(cell * (i % perRow) + style.WindowPadding.X);

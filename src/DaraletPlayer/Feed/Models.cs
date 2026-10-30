@@ -18,6 +18,11 @@ namespace DaraletPlayer.Feed {
         /// so it says so instead of waiting for a reply that won't come.
         /// </summary>
         [DataMember(Name = "kinds")] public string[] Kinds;
+        /// <summary>
+        /// What else the server's commands take that older servers' don't (PlayerUi.Features), such as "packid": /bank
+        /// inscribe and /bank icon naming a pack by its id. Null from an older server.
+        /// </summary>
+        [DataMember(Name = "features")] public string[] Features;
     }
 
     [DataContract]
@@ -164,6 +169,12 @@ namespace DaraletPlayer.Feed {
         [DataMember(Name = "noteCount")] public int NoteCount;
         [DataMember(Name = "autoSort")] public bool AutoSort;
         [DataMember(Name = "packs")] public List<BankPackInfo> Packs;
+        /// <summary>
+        /// The side packs you carry (number 0), bank open or not, with their inscriptions as the server has them: Decal
+        /// only learns one from an appraisal, and keeps the old one when an appraisal has none, so a cleared pack kept
+        /// its tags. Null from an older server.
+        /// </summary>
+        [DataMember(Name = "carried")] public List<BankPackInfo> Carried;
     }
 
     /// <summary>
