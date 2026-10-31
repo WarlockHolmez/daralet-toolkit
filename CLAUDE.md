@@ -109,6 +109,13 @@ dotnet test tests/DaraletPlayer.Tests/DaraletPlayer.Tests.csproj
   with its own. `CursorKeeper` answers it instead (the system cursor ImGui's code would pick, `SetCursor`, and `e.Eat`
   on Decal's `WindowMessage`) while ImGui's cursor isn't the plain arrow, which is left to the game. It covers other
   plugins' ImGui windows too: there's one ImGui.
+- **Putting ImGui's cursor back after drawing out of place asserts** ("Code uses SetCursorPos()/SetCursorScreenPos() to
+  extend window/parent boundaries"), in a dialog over the game, if nothing is drawn after it. Move it to one item gap
+  above where it was and draw `ImGui.Dummy(Vector2.Zero)`, which lands it there (`CombatLogTab.DrawCopy`).
+- **The clipboard goes through `SystemClipboard`**, which uses Windows directly and says if it couldn't, not ImGui's calls,
+  which can't say. `[clipboard]` lines in log.txt.
+- **A button drawn only while `IsWindowHovered()` never gets clicked.** A pressed button is an active item, which that says
+  blocks the window, so the button goes before its release counts. Pass `AllowWhenBlockedByActiveItem` (`CombatLogTab.DrawCopy`).
 - **Every Decal event handler and render callback is wrapped in try/catch.** An exception escaping into Decal can crash the
   client.
 - **JSON:** System.Text.Json writes dictionaries as objects; `DataContractJsonSerializer` only reads them with
@@ -664,6 +671,46 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   the /dap window, like UtilityBelt's bar button, in a `FloatingWindow` of its own (`launcher`, hidden to start) that can
   go anywhere and be any Size, and a key for the same (`SettingsData.ToolkitKey`, none to start), read from Windows on
   Decal's RenderFrame like Hide game UI's.
+- **Borderless window** (`Ui/BorderlessWindow.cs`, `Feed/BorderlessPlacement.cs`, the Config tab's Game window section,
+  `SettingsData.BorderlessWindow`, off to start): takes `WS_CAPTION` and `WS_THICKFRAME` off the game's window and resizes
+  it to its client area, so the client area doesn't change size and the game has nothing to rebuild. A window as big as its
+  monitor goes exactly over it; any other stays where its picture was, kept on screen. It waits for login (the character's
+  profile), looks again once a second in case the game puts the border back, and puts the border back when turned off or
+  at shutdown. A true fullscreen game has no caption, so nothing happens. Centre and Top left move it, having no title bar
+  to drag. `[borderless]` lines in log.txt. Untested in the game when written.
+
+- **Combat Text** (the Combat tab's sub tab, with the Combat log window, whose lines show a Copy button while hovered: `Ui/CombatLogTab.cs`, `Ui/CombatWatch.cs`, `Ui/CombatText.cs`,
+  `Feed/CombatLines.cs`, `CombatKindInfo.cs`, `CombatFloats.cs`, `CombatLogFile.cs`): everything is read from
+  `ChatBoxMessage` by `CombatLines.Read`, since chat is the one place all combat comes through: the client writes its own
+  line for `GameEventAttackerNotification` (`You %s %s for %d point%s of %sdamage!` in `acclient.exe`; the line for being hit
+  isn't in the exe as plain text, so its pattern takes either "you" or "your <part>"), and the server writes spells,
+  glancing blows and adrenaline itself, with short sentences in front ("Critical hit! Overpower! You..."). A combat line the
+  patterns miss, mentioning points or damage, goes in log.txt (`[combat]`, the first 20 a session): add its wording to
+  `CombatLines.Patterns` and a row to `CombatLinesTests`. Kill and death wording is too varied (`Strings.cs` in daralet-ACE),
+  so those are told by their game events, 0x01AD and 0x01AC, which come just before the client writes the same text.
+  Tells, speech, channels and anything with a quote in it are never combat, so nobody can fake a number with a tell.
+  Each kind (`CombatKind`, a row in `CombatKindInfo.All`, whose `Key` is what settings.json has) has its own `CombatKindOptions`:
+  Floating, Log, Save, Hide in chat (`e.Eat`) and a colour. **Floating text** (`CombatText`) rises from two fixed places on
+  screen, one for what you do and one for what's done to you, in percent of the screen. It's drawn on ImGui's background list from a hud of its own with `NoInputs`, so
+  it never takes a click, using `ItemIcons.DrawLabel`; so many numbers fill the label cache, which now frees a full cache's
+  textures a frame later (`RetireLabels`), since this frame's draw lists still point at them. **Over their head**
+  (`SettingsData.CombatTextOverHead`, off to start, `Ui/CombatHeadText.cs`) puts them over whoever they landed on instead:
+  the game leaves its camera on the Direct3D device (`UBService.Huds.D3Ddevice`, `Transform.View` and `Projection`, and
+  `Viewport`, read from a hud's OnRender), drawing in landblock meters as (X, Z, Y) of `LocationX/Y/Z`, so a place in the
+  world can be worked out on screen (`Feed/CombatProjection.cs`), and the numbers are drawn there like the rest, on top of
+  everything, centred and stacked upward per target (`stackTops`) rather than in the fixed places' lanes. While some effects draw (a streak spell in flight, for seconds at a time) the device holds the same camera with its
+  Y and Z swapped, which put numbers off screen (`CombatProjection.IsSwapped`, `Unswap`). Any other camera that isn't near
+  you is passed over for the last good one (`MostFromCamera`). Decal doesn't say how tall anything is: `HeadMeters` is a person's, plus the Height
+  slider. Worked out indoors; outdoors, a creature in the next landblock is taken to be 192 meters on
+  (`LandblockOffset`), untested when written. Decal's own 3D text (`D3DService`, `D3DObj`) was tried first and dropped:
+  the world's lighting darkened it, its font and size were its own, `Set2DText` failed with `0x8876086C`
+  (D3DERR_INVALIDCALL) from a render callback (it starts a scene with `D3DXCreateRenderToSurface`), and `Color` refused a
+  see-through colour. Chat only gives a name (`CombatLine.Target`, a pattern's `target` group), so
+  `CombatTargets.Pick` takes the one you hit last, then your selection, then the nearest of that name, and lines of one
+  kind and name within 100ms (a cleave) each take the next nearest (`NearestNotUsed`), a guess at which number is whose; what can't be
+  placed, or with no camera (`CombatHeadText.HasCamera`, `[combat]` lines), uses the fixed places. **Saved logs**
+  (`SettingsData.CombatLogSave`, off to start) are text files in `Combat Logs`, `<character> yyyy-MM-dd.txt`, written about
+  once a second; nothing deletes them. Untested in the game when written.
 
 - **Arena and Leaderboards tabs** (`Ui/ArenaTab.cs`, `Ui/LeaderboardsTab.cs`, `Feed/ArenaCommands.cs`,
   `Feed/Leaderboards.cs`): the leaderboards are the website's (`leaderboards.js`), read from `/api/leaderboards/...` with
@@ -822,10 +869,19 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   constructor only hooks the UB bar, and its `Dispose` frees every texture it made. At most 8 new textures a frame, so
   opening a full bank doesn't stall the game. Items the client has come from Decal (`LongValueKey.Icon`, `IconOverlay`,
   `IconUnderlay`); listings from the Market API's hex ids, and your own listings, sales and expired items from the
-  `icon` `@playerui market` sends (read from each listing's snapshot by the Market API's `Describe`). Underlay tiles by
-  kind, and the outline colour by effect (white outline pixels recoloured, black for none; only white at the icon's edge,
-  next to a see-through pixel, `ItemIcons.AtEdge`, or an item's own white parts turned black), are the website's
-  (`IconLayers.Underlays`, `OutlineColors`, from market.js). Hovering an icon shows the item's tooltip. **Compact** on the
+  `icon` `@playerui market` sends (read from each listing's snapshot by the Market API's `Describe`). The game picks an
+  item's underlay tile from portal.dat's table `0x25000008`, by ItemType's bit number plus one (melee `060011CB`, missile
+  and thrown `060011D2`, casters the plain `060011D4`). The Market API names these `MeleeWeapon`, `Weapon` (the missile
+  tile, under its old name) and `Caster`; before that it called them all `Weapon`, so for an older server or API
+  `IconLayers.WeaponKind` corrects it from the listing's class. Underlay tiles by kind are the website's
+  (`IconLayers.Underlays`, from market.js). The outline is the client's own (`IconData::RenderIcons`, `0x58DFB0`, read
+  with `acclient.pdb`'s names, though that pdb is an older build and its addresses are off; UtilityBelt's `AcClient` has
+  the right ones): the overlay goes on the icon, then every pure white pixel (opaque `FFFFFFFF` exactly, `0x441750`), edge
+  or not, takes the colour at the same spot in a 32x32 picture, a gradient for each effect, from portal.dat's table
+  `0x25000009` (`IconLayers.EffectImages`, `ItemIcons.Painted`). The table goes by UiEffects' lowest bit set plus one
+  (`IconLayers.EffectOf`, `0x685460`), so magic beats an element; its Default, for no effect, is black. Sigil trinkets'
+  one colour each is the website's (`SigilOutlines`). Market listings only have the Market API's few effect names, from
+  damage type and spells. Hovering an icon shows the item's tooltip. **Compact** on the
   window's top line (`SettingsData.CompactLists`) hides them; a loot mark still shows, on its own.
 
 - **World tab** (`Ui/WorldTab.cs`, `Map/`): the map (Daralet Admin's `dereth-map.png`), the places in
@@ -964,7 +1020,7 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   their Update link falls back to their own `LatestPageUrl`, since a release page under the new name isn't one of theirs. No Decal plugin known (October 2026) downloads and installs its own updates; UtilityBelt's
   is a notice like this one, and the loader updating the plugin itself was left for later.
 - **Everything the plugin writes** goes in `Documents\Decal Plugins\Daralet Toolkit` (`DataFolder`): `settings.json`,
-  `profiles.json`, `Settings Profiles`, `Settings Exports`, `log.txt`, `Loot Profiles`, `Hotbar Layouts`, `world-data`. It was `Decal Plugins\Daralet` before the rename: `PluginCore.Startup` moves
+  `profiles.json`, `Settings Profiles`, `Settings Exports`, `log.txt`, `Loot Profiles`, `Hotbar Layouts`, `Combat Logs`, `world-data`. It was `Decal Plugins\Daralet` before the rename: `PluginCore.Startup` moves
   that folder over first thing (`DataFolder.MoveOldFolder`, `FolderMove.Once`, copying instead if a file's held open),
   unless the new one is already there. Only startup does it, so a test that asks `DataFolder` for a path doesn't move
   the developer's real folder. Only files a player drops in by hand (`dereth-map.png`, `locations.xml`) are looked for

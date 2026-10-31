@@ -31,9 +31,13 @@
     <!-- HttpClient, for the Market API (market search, leaderboards) -->
     <Reference Include="System.Net.Http" />
     <!-- Managed DirectX, which UtilityBelt.Service needs and so is installed wherever it is. Only needed here so the compiler can
-         tell ManagedTexture's constructors apart. -->
+         tell ManagedTexture's constructors apart, and to read the game's camera (CombatHeadText). -->
     <Reference Include="Microsoft.DirectX.Direct3D">
       <HintPath>$(WINDIR)\Microsoft.NET\DirectX for Managed Code\1.0.2902.0\Microsoft.DirectX.Direct3D.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.DirectX">
+      <HintPath>$(WINDIR)\Microsoft.NET\DirectX for Managed Code\1.0.2902.0\Microsoft.DirectX.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>
