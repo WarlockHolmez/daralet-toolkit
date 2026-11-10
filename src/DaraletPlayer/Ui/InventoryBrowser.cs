@@ -297,6 +297,12 @@ namespace DaraletPlayer.Ui {
                 SnapshotSoon();
             }
             Widgets.Tip("Highlights the items your active loot profile's rules would mark, with each rule's highlight and icon (set in the Loot tab). The server describes every item listed to check them, so a full bank takes a little while to fill in.");
+
+            // the bank's own items can't be on a hotbar: only what you carry
+            if (carried || ShowsBoth) {
+                ImGui.SameLine();
+                RenderHotbarMarksCheckbox(settings);
+            }
         }
 
         /// <summary>The items as icons, as many to a row as fit, then the pack's empty slots.</summary>
@@ -350,7 +356,7 @@ namespace DaraletPlayer.Ui {
                 drawList.AddText(at + new Vector2(3, 3), ImGui.GetColorU32(ImGuiCol.TextDisabled), Initials(item.Name));
             }
 
-            ItemIcons.DrawMark(drawList, item.Mark, at, cell);
+            DrawMarks(drawList, item, at, cell);
 
             if (VendorSale.IsMarked(settings, item.Id)) {
                 ItemIcons.DrawSaleMark(drawList, at, cell);
@@ -417,11 +423,17 @@ namespace DaraletPlayer.Ui {
                 ImGui.TableNextRow();
                 ImGui.TableNextColumn();
 
-                var iconHovered = icons.Draw(Icon(item), item.Mark);
+                var hotbarKey = HotbarKey(item);
+                var iconHovered = icons.Draw(Icon(item), item.Mark, hotbarKey);
                 var label = item.Stack > 1 ? $"{item.Name} ({item.Stack:N0})" : item.Name;
 
                 if (VendorSale.IsMarked(settings, item.Id)) {
                     label += "  (for sale)";
+                }
+
+                // with Compact there's no icon to mark
+                if (hotbarKey != null && !icons.Shown) {
+                    label += hotbarKey.Length > 0 ? $"  (hotbar {hotbarKey})" : "  (on hotbar)";
                 }
                 ImGui.Selectable($"{label}##item-{item.Id}", item.Id == selection);
 
@@ -604,6 +616,30 @@ namespace DaraletPlayer.Ui {
                 new ItemLine(feed.DescribeWaitText(item.Guid), ItemLineStyle.Detail),
             };
             ItemTooltip.Show(ItemUse.With(lines, item.Guid), iconHovered);
+        }
+
+        /// <summary>
+        /// With Hotbar highlights on, the key that uses the item from a hotbar that's showing ("" for none), or null if it
+        /// isn't on one.
+        /// </summary>
+        private string HotbarKey(Item item) {
+            return settings.Data.InventoryHotbarMarks ? HotbarItems.KeyOnShownBar(settings.Data, item.Id) : null;
+        }
+
+        /// <summary>An item's loot mark and hotbar mark over its square, which share the top left corner.</summary>
+        private void DrawMarks(ImDrawListPtr drawList, Item item, Vector2 at, float size) {
+            icons.DrawMarks(drawList, at, size, item.Mark, HotbarKey(item));
+        }
+
+        /// <summary>The Hotbar highlights checkbox: here and on Retail's top line, one setting.</summary>
+        internal static void RenderHotbarMarksCheckbox(Settings settings) {
+            if (ImGui.Checkbox("Hotbar highlights", ref settings.Data.InventoryHotbarMarks)) {
+                settings.Changed();
+            }
+            Widgets.Tip("Marks the items on a hotbar you have showing as the game's pack marks what's on its shortcut bar: "
+                + "the icon's top left corner in gold, with the key that uses it in a little square (empty when no key "
+                + "does, or the item's on another page). Hidden bars don't count. With Compact on, the list says "
+                + "\"(hotbar 1)\" or \"(on hotbar)\" after the name instead.");
         }
 
         private LootList ActiveLootList() {

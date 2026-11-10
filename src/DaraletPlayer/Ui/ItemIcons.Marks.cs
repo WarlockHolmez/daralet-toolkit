@@ -49,6 +49,67 @@ namespace DaraletPlayer.Ui {
                 ImGui.GetColorU32(Colors.Good));
         }
 
+        // the game's shortcut mark: a pale gold, dithered over the icon, and a cream square with the key in black
+        private static readonly uint HotbarHatch = PackedColor.Pack(236, 212, 120, 255);
+        private static readonly uint HotbarKeyFill = PackedColor.Pack(240, 234, 210, 255);
+        private static readonly uint HotbarKeyEdge = PackedColor.Pack(60, 55, 45, 255);
+        private static readonly uint HotbarKeyText = PackedColor.Pack(0, 0, 0, 255);
+
+        /// <summary>
+        /// A loot rule's mark and the hotbar mark together, since they share the top left corner: the hotbar's gold under
+        /// the rule's frame and symbol, and its key square over them, so the key always shows. Either can be null (no
+        /// rule; not on a hotbar).
+        /// </summary>
+        public void DrawMarks(ImDrawListPtr drawList, Vector2 at, float size, LootRule rule, string hotbarKey) {
+            if (hotbarKey != null) {
+                DrawHotbarCorner(drawList, at, size);
+            }
+
+            DrawMark(drawList, rule, at, size);
+
+            if (hotbarKey != null) {
+                DrawHotbarKey(drawList, at, size, hotbarKey);
+            }
+        }
+
+        /// <summary>The icon's own pixels: 1 in a 32-pixel square, so the hotbar mark is the game's at its size.</summary>
+        private static float HotbarPixel(float size) => Math.Max(1f, (float)Math.Round(size / 32));
+
+        /// <summary>
+        /// The hotbar mark's ground, as the game's pack marks what's on its shortcut bar: the icon's top left corner
+        /// dithered in pale gold.
+        /// </summary>
+        private static void DrawHotbarCorner(ImDrawListPtr drawList, Vector2 at, float size) {
+            var pixel = HotbarPixel(size);
+            var cells = (int)Math.Round(size * 0.47f / pixel);
+
+            for (var y = 0; y < cells; y++) {
+                for (var x = (y & 1); x + y < cells; x += 2) {
+                    var spot = at + new Vector2(x * pixel, y * pixel);
+                    drawList.AddRectFilled(spot, spot + new Vector2(pixel, pixel), HotbarHatch);
+                }
+            }
+        }
+
+        /// <summary>The hotbar mark's square in the corner, cream, with the key that uses the item in black ("" for none).</summary>
+        private void DrawHotbarKey(ImDrawListPtr drawList, Vector2 at, float size, string key) {
+            var pixel = HotbarPixel(size);
+            var square = (float)Math.Max(5, Math.Round(size * 0.28f));
+            var pixels = (int)Math.Round(square - 1);
+            var text = string.IsNullOrEmpty(key) ? null : LabelSize(key, pixels, outlined: false);
+            var width = text.HasValue ? Math.Max(square, text.Value.X + 2) : square;
+            var topLeft = at + new Vector2(pixel, pixel);
+            var corner = topLeft + new Vector2((float)Math.Round(width), square);
+
+            drawList.AddRectFilled(topLeft, corner, HotbarKeyFill);
+            drawList.AddRect(topLeft, corner, HotbarKeyEdge);
+
+            if (text.HasValue) {
+                var middle = (topLeft + corner) / 2;
+                DrawLabel(drawList, key, middle - text.Value / 2, pixels, HotbarKeyText, outlined: false);
+            }
+        }
+
         public static void StackCount(ImDrawListPtr drawList, int stack, Vector2 at, float cell) {
             var text = StackText.Short(stack);
             var size = Widgets.SquareTextSize(text);
