@@ -2275,12 +2275,16 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   toward the sun (`0x8682C8`, x east, y north, z up; LScape's copy at `0x842950`), worked out from the sky
   (`SkyDesc::GetLighting`); `LScape::calc_object_light` (`0x455850`) is the ambient level plus the sun vector's length
   times 0.2. The billboards are drawn with that ambient and the sun on light 0 (put back by the state block), a white
-  material, normals up, and 0.4 of the sun (`SunShare`): measured against real trees in the same places (the mean
-  foliage colour in two screenshots), which take about 0.37. The real trees are still a little bluer. **Density
+  material, normals up, and 0.3 of the sun (`SunShare`): measured against real trees in the same places (the mean
+  foliage colour in two screenshots), which take about 0.37 by brightness, lowered for their bluer tone, which
+  showed at the seam. **Mipmaps** (`Feed/MipChain.cs`): far billboards sparkled; each picture now has its halved
+  copies, colours weighted by alpha, each level's alpha scaled so as many texels pass the alpha test as in the full
+  picture (averaged alone, a cut-out thins to nothing far off). Seen in the game: real trees to 3 at 100% density,
+  billboards to 24, 54 fps, the seam hard to find. **Density
   matters little to them**: at 100% density with real scenery held at the game's 1 (the memory guard refused 5,
   896 MB short), 170,037 billboards from ring 2 to 24 ran at 142 fps, where real trees to 5 at 60% ran at 33 (seen
   in the game, November 2026): the real scenery is the cost, the billboards almost none. Not yet: a handover distance
-  from real trees, density of their own, mipmaps (far billboards sparkle), and a rebuild for each step of the scenery
+  from real trees, density of their own, and a rebuild for each step of the scenery
   stepping up. Test steps `set billboards 0|1` and `option <PlayerOption> 0|1` (a game option, through
   `ClientOptions.Set`); a hot reload mid-run hands the steps left to the next copy (`TestRunner.Dispose`): before, the
   new copy took the leftover progress.txt for a crash and dropped the script.

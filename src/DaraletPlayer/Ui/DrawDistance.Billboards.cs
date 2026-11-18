@@ -311,6 +311,7 @@ namespace DaraletPlayer.Ui {
                 device.TextureState[1].ColorOperation = TextureOperation.Disable;
                 device.SamplerState[0].MinFilter = TextureFilter.Linear;
                 device.SamplerState[0].MagFilter = TextureFilter.Linear;
+                device.SamplerState[0].MipFilter = TextureFilter.Linear;
 
                 foreach (var batch in billboardBatches) {
                     device.SetTexture(0, batch.Texture);

@@ -24,9 +24,10 @@ namespace DaraletPlayer.Ui {
 
         /// <summary>
         /// How much of the sun a billboard takes (see LightLikeTheGame): measured against the real trees in the same
-        /// places (the mean colour of their foliage in two screenshots, November 2026), about 0.37 of the sun on them.
+        /// places (the mean colour of their foliage in two screenshots, November 2026), about 0.37 of the sun on them by
+        /// brightness; 0.3 for their bluer tone (the sun is warm), which showed at the seam.
         /// </summary>
-        private const float SunShare = 0.4f;
+        private const float SunShare = 0.3f;
 
         private DateTime nextLightLog;
 

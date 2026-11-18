@@ -54,9 +54,21 @@ namespace DaraletPlayer.Ui {
             return made;
         }
 
+        /// <summary>The picture and its smaller copies (Feed/MipChain.cs: far billboards sparkled without them).</summary>
         private static DxTexture MakeTexture(Device device, uint[] pixels, int width, int height) {
-            var texture = new DxTexture(device, width, height, 1, Usage.None, Format.A8R8G8B8, Pool.Managed);
-            var stream = texture.LockRectangle(0, LockFlags.None, out var pitch);
+            var levels = MipChain.Levels(pixels, width, height);
+            levels.Insert(0, (pixels, width, height));
+            var texture = new DxTexture(device, width, height, levels.Count, Usage.None, Format.A8R8G8B8, Pool.Managed);
+
+            for (var level = 0; level < levels.Count; level++) {
+                Fill(texture, level, levels[level].Pixels, levels[level].Width, levels[level].Height);
+            }
+
+            return texture;
+        }
+
+        private static void Fill(DxTexture texture, int level, uint[] pixels, int width, int height) {
+            var stream = texture.LockRectangle(level, LockFlags.None, out var pitch);
 
             try {
                 var row = new int[width];
@@ -70,10 +82,8 @@ namespace DaraletPlayer.Ui {
                 }
             }
             finally {
-                texture.UnlockRectangle(0);
+                texture.UnlockRectangle(level);
             }
-
-            return texture;
         }
 
         /// <summary>The model's triangles and textures, ready to draw.</summary>
