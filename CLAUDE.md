@@ -1290,7 +1290,12 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   where they sit in the grid: the first build judged by the block's own detail and found none while 0 trees were
   made, so stale blocks still say they're full detail; never so in the
   game's own running), logs them, reloads whole once more if any, and if they're still there holds the scenery
-  where it is (`StaleBlocksStopStep`, `[draw-distance] ... still hold objects` lines). Seen
+  where it is (`StaleBlocksStopStep`, `[draw-distance] ... still hold objects` lines). **No landscape load until the
+  last has settled** (`LoadSettled`: 2 s since it and a second with no frame over 100 ms; at first, from the plugin's
+  start): every black screen came from two loads close together, the last after a hot reload (the old copy's reload
+  at shutdown, then the new copy's for a density it took for changed), seen as "0 in full detail" at every look and a
+  black screenshot; with the guard the same hot reload came through clean. A `restart` test step recovers the game.
+  Seen
   at scenery 14, 12%: 1.3 GB free in one piece of 1.15 GB, so the address space isn't in pieces, and the device
   stayed fine. Tried in the game: login to scenery 14 at 12% stepped up with four short hangs (0.3 s
   each) and no crash, free memory going down steadily with no spikes. **The flat 9 fps stretches** (110 ms every
@@ -2220,7 +2225,26 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   reload stays in memory). Claude can't press ShadowLauncher's buttons: the game is set to run as administrator
   (`RUNASADMIN` on `acclient.exe`), so the launcher's window is closed to UI Automation from an ordinary process;
   ShadowLauncher takes no command line and builds the game's command line with the password itself, which Claude
-  must never handle. Crashes are read from the Application event log as ever. Untested in the game when written.
+  must never handle. Crashes are read from the Application event log as ever. Tried in the game: test runs,
+  restarts carrying on after Auto relaunch, and with the monitor off (the game stays in front and its device fine).
+  More steps: `screenshot name` (`Ui/GameScreenshot.cs`: the back buffer copied to system memory and saved as PNG in
+  `Test Runs\shots`, from Decal's RenderFrame, before the game's UI; works as administrator and with the monitor
+  off; Claude reads the PNGs) and `compare` (billboards: the real scenery against `SceneryLayout`, below).
+- **Billboards, stage 1: where far trees would be** (`Feed/SceneryLayout.cs`, `SceneryObject.cs`, `PlacedScenery.cs`,
+  `Ui/DrawDistance.Compare.cs`; the user's call, November 2026: real scenery to 4-5 landblocks, billboards beyond).
+  Past the scenery radius the game makes no objects, so places come from the dats by the client's rules
+  (`CLandBlock::get_land_scenes`, `0x5311A0`, as daralet-ACE's `Entity/Scenery.cs` has them): per terrain vertex,
+  terrain and scene type pick the region's (`0x13000000`) scenes, hashes (32-bit unsigned, wrapping) pick a scene and
+  each object's chance, place, turn and size; kept inside the block, off roads (ACE's simple road bits), out of cells
+  with a building (`CSortCell::has_building`, `0x534D40`; here the cells of buildings' origins in `LandblockInfo`)
+  and on ground of the slope it takes (`ObjectDesc::CheckSlope`, `0x52FDD0`: the ground triangle's normal's upward
+  part between MinSlope `+0x5C` and MaxSlope `+0x60`); height from the block's height grid, each cell split along
+  `LandblockMesh.GetSplitDir`'s diagonal (`Plane::set_height`, `0x52FD90`, in the client); Scenery density's rule
+  applied. Checked in the game against the real objects (`compare`: a full-detail block's objects at `+0x108`, count
+  `+0x104`, the dat's placed ones first, as many as its LandblockInfo (`+0x100`) has at `+0x38`; positions at
+  `+0x48`, origin `+0x3C`): 121 blocks, 13,037 real, 12,942 predicted, 90.5% within 1 m, heights exact. The slope
+  and building rules brought the count from 3% over to 1% under; the 10% unmatched are placed in both, more than
+  1 m apart, which billboards far off won't show.
 - **Everything the plugin writes** goes in `Documents\Decal Plugins\Daralet Toolkit` (`DataFolder`): `settings.json`,
   `profiles.json`, `Settings Profiles`, `Settings Exports`, `log.txt`, `Loot Profiles`, `Hotbar Layouts`, `Combat Logs`, `Chat Logs`, `Frame Rate Logs`, `Test Runs`, `world-data`. It was `Decal Plugins\Daralet` before the rename: `PluginCore.Startup` moves
   that folder over first thing (`DataFolder.MoveOldFolder`, `FolderMove.Once`, copying instead if a file's held open),

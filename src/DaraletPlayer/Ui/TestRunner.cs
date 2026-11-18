@@ -155,6 +155,16 @@ namespace DaraletPlayer.Ui {
                 case "restart":
                     Restart();
                     return false;
+                case "compare":
+                    Result(drawDistance.CompareScenery());
+                    return true;
+                case "screenshot": {
+                    var name = string.Concat(step.Words.Split(Path.GetInvalidFileNameChars()));
+                    var path = Path.Combine(Folder, "shots", $"{DateTime.Now:yyyy-MM-dd HH-mm-ss} {name}.png");
+                    var problem = GameScreenshot.Save(path);
+                    Result(problem == null ? "screenshot: " + path : "screenshot failed: " + problem);
+                    return true;
+                }
                 default:
                     return true;
             }

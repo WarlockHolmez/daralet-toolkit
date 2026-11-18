@@ -18,6 +18,8 @@ namespace DaraletPlayer.Feed {
     /// chat /something     # a chat command, through the game's chat parser
     /// log some words      # a line in the results
     /// restart             # exit the game; ShadowLauncher's Auto relaunch starts it again, and the rest runs then
+    /// compare             # the real scenery against SceneryLayout's (billboards), in the full-detail blocks
+    /// screenshot name     # the game's 3D picture to Test Runs\shots\[time] name.png
     /// </code>
     /// </summary>
     public static class TestScript {
@@ -67,9 +69,11 @@ namespace DaraletPlayer.Feed {
                 }
                 case "chat":
                 case "log":
+                case "screenshot":
                     return rest.Length > 0 ? new TestStep(number, line, kind, null, 0, rest)
                         : Bad(number, line, kind + " takes some text");
                 case "restart":
+                case "compare":
                     return new TestStep(number, line, kind, null, 0, null);
                 default:
                     return Bad(number, line, "no step called " + kind);

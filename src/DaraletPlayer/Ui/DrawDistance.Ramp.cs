@@ -28,6 +28,32 @@ namespace DaraletPlayer.Ui {
         /// another window), and the next step waits for a second without one.
         /// </summary>
         private void NoteFrame() {
+            NoteFrameTime();
+        }
+
+        /// <summary>
+        /// When the last landscape load began (a whole reload or a refresh in place); at first, when this copy of the
+        /// plugin started, as a hot reload follows the old copy's own reload at shutdown.
+        /// </summary>
+        private DateTime lastLoadAt = DateTime.UtcNow;
+
+        /// <summary>How long after a load the next may begin, at least.</summary>
+        private const double LoadQuietSeconds = 2;
+
+        /// <summary>
+        /// Whether a landscape load may begin: LoadQuietSeconds since the last, and a second with no slow frame. Every
+        /// black screen (the game drawing nothing, its landscape empty, a crash in make_plane later) came from two loads
+        /// close together: brought down in place then reloaded the next frame; and after a hot reload, the old copy's
+        /// reload at shutdown then the new copy's for a density it took for changed (November 2026: "0 in full detail"
+        /// at every look after, the screenshot all black).
+        /// </summary>
+        private bool LoadSettled() {
+            var now = DateTime.UtcNow;
+            return (now - lastLoadAt).TotalSeconds >= LoadQuietSeconds
+                && (now - lastHitchAt).TotalSeconds >= DrawDistanceRamp.SettledSeconds;
+        }
+
+        private void NoteFrameTime() {
             var ms = frameClock.Elapsed.TotalMilliseconds;
 
             if (lastFrameMs >= 0 && ms - lastFrameMs > DrawDistanceRamp.HitchMs) {

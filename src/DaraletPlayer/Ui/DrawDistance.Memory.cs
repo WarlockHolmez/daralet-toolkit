@@ -185,6 +185,7 @@ namespace DaraletPlayer.Ui {
             freeBeforeLoad = FreeMegabytes();
             costBeforeLoad = costBefore;
             measureLoadAt = DateTime.UtcNow.AddSeconds(5);
+            lastLoadAt = DateTime.UtcNow;
         }
 
         /// <summary>

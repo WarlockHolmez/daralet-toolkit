@@ -185,6 +185,15 @@ namespace DaraletPlayer.Ui {
             // there once this pass is done, with nothing still to step up to and no density change waiting
             AtTarget = scenery == targetScenery && landscape == targetLandscape && !densityChanging;
 
+            // a load only once the last has settled (LoadSettled): every black screen came from two close together
+            var loads = scenery != patchedRadius || densityChanging || reload
+                || lscape != IntPtr.Zero && *(int*)lscape != landscape;
+
+            if (loads && !broken && !LoadSettled()) {
+                AtTarget = false;
+                return;
+            }
+
             if (scenery != patchedRadius && !broken) {
                 if (!PatchRings(scenery)) {
                     return;
