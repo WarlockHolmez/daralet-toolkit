@@ -2245,6 +2245,15 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   `+0x48`, origin `+0x3C`): 121 blocks, 13,037 real, 12,942 predicted, 90.5% within 1 m, heights exact. The slope
   and building rules brought the count from 3% over to 1% under; the 10% unmatched are placed in both, more than
   1 m apart, which billboards far off won't show.
+- **Fog** (`Ui/DrawDistance.Fog.cs`, the Draw Distance page's Fog slider, `DrawDistanceOptions.Fog`, `fog`, 100 to
+  start, 10 at least; the test step `set fog N`; the user's call, November 2026): the game's distance fog thinned. It's
+  Direct3D's linear fog, start to end distance, which the game works out each frame from the sky in its landscape
+  update and hands to `RenderDeviceD3D::SetFFFogProperties_` (`0x5A41B0`, thiscall: colour, start, end; it sets
+  FOGCOLOR, FOGSTART and FOGEND only when they change) from one call, `0x5066BB`. That call is hooked
+  (`AcClient.Call.RenderDeviceD3D__SetFFFogProperties_0x005066BB`) while below 100%, and both distances stretched by
+  100 over the percent; the colour and the game's own Disable Distance Fog (PlayerOption 48) are left alone. Seen in
+  the game: the game's 150 to 2400 m at midday; at 100% the far hills were grey silhouettes and the billboards gone in
+  them, at 50% the forest showed through haze, at 25% (600 to 9600 m) clear to the horizon, 51 fps.
 - **Billboards, stages 2 and 3: pictures and drawing** (`Feed/TextureDecode.cs`, `Feed/ImpostorRaster.cs`,
   `Ui/BillboardModels.cs`, `Ui/BillboardModel.cs`, `Ui/DrawDistance.Billboards.cs`; Billboards in the Draw Distance
   rows, `DrawDistanceOptions.Billboards`, `billboards`, off to start; the test step `set billboards 1`). Each scenery
@@ -2275,7 +2284,9 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   toward the sun (`0x8682C8`, x east, y north, z up; LScape's copy at `0x842950`), worked out from the sky
   (`SkyDesc::GetLighting`); `LScape::calc_object_light` (`0x455850`) is the ambient level plus the sun vector's length
   times 0.2. The billboards are drawn with that ambient and the sun on light 0 (put back by the state block), a white
-  material, normals up, and 0.3 of the sun (`SunShare`): measured against real trees in the same places (the mean
+  material, normals up, and a share of the sun by its strength, not its height (`SunShare` times the sun vector's
+  length, as `calc_object_light` goes by it: at dusk, lit by its height, they came out a tenth darker than the real
+  trees, which darkened only with the ambient; matched again after). The share: measured against real trees in the same places (the mean
   foliage colour in two screenshots), which take about 0.37 by brightness, lowered for their bluer tone, which
   showed at the seam. **Mipmaps** (`Feed/MipChain.cs`): far billboards sparkled; each picture now has its halved
   copies, colours weighted by alpha, each level's alpha scaled so as many texels pass the alpha test as in the full

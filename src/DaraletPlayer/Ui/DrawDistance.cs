@@ -148,6 +148,7 @@ namespace DaraletPlayer.Ui {
                 AtTarget = true;
                 ApplyDetail(options.ClampedDetailDistance);
                 ApplyLowDetail(options.ClampedLowDetailDistance);
+                ApplyFog(options.ClampedFog);
                 return;
             }
 
@@ -254,6 +255,7 @@ namespace DaraletPlayer.Ui {
 
             ApplyDetail(on ? options.ClampedDetailDistance : 0);
             ApplyLowDetail(on ? options.ClampedLowDetailDistance : 0);
+            ApplyFog(on ? options.ClampedFog : 100);
             UpdateBillboards(on && options.Billboards && !inPortal && lscape != IntPtr.Zero,
                 lscape != IntPtr.Zero ? *(int*)lscape : 0);
         }
@@ -355,6 +357,7 @@ namespace DaraletPlayer.Ui {
                 DisposeBillboards();
                 UnhookOnRoad();
                 UnhookGetDegrade();
+                UnhookFog();
                 ReloadAtGameRadius(reload);
                 ApplyDetail(0);
             }

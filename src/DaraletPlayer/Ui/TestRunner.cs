@@ -147,6 +147,12 @@ namespace DaraletPlayer.Ui {
                     return true;
                 case "option": {
                     var option = uint.Parse(step.Field);
+
+                    if (step.Number < 0) {
+                        Result($"option {option} is {ClientOptions.Get(option)?.ToString() ?? "unknown"}");
+                        return true;
+                    }
+
                     var set = ClientOptions.Set(option, step.Number != 0);
                     Result($"option {option} {(step.Number != 0 ? "on" : "off")}: "
                         + (set ? $"now {ClientOptions.Get(option)}" : "couldn't be set"));
@@ -238,6 +244,9 @@ namespace DaraletPlayer.Ui {
                     break;
                 case "far":
                     options.LowDetailDistance = value;
+                    break;
+                case "fog":
+                    options.Fog = value;
                     break;
                 case "billboards":
                     options.Billboards = value != 0;

@@ -23,7 +23,8 @@ namespace DaraletPlayer.Feed {
     /// </code>
     /// </summary>
     public static class TestScript {
-        public static readonly string[] Fields = { "on", "scenery", "density", "landscape", "detail", "far", "billboards" };
+        public static readonly string[] Fields =
+            { "on", "scenery", "density", "landscape", "detail", "far", "billboards", "fog" };
 
         /// <summary>Each step in order; a line it can't read is a step of kind "bad", which the run reports and stops on.</summary>
         public static List<TestStep> Parse(IEnumerable<string> lines) {
@@ -68,12 +69,15 @@ namespace DaraletPlayer.Feed {
                     return new TestStep(number, line, kind, parts[0].ToLowerInvariant(), value, null);
                 }
                 case "option": {
-                    // a game option (PlayerOption) on or off: "option 48 0" is distance fog on
+                    // a game option (PlayerOption) on or off: "option 48 0" is distance fog on; "option 5" only says
+                    // what it is (a number of -1)
                     var parts = rest.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    var on = -1d;
 
-                    return parts.Length == 2 && uint.TryParse(parts[0], out _) && Number(parts[1], out var on)
+                    return (parts.Length == 1 || parts.Length == 2 && Number(parts[1], out on))
+                        && parts.Length > 0 && uint.TryParse(parts[0], out _)
                         ? new TestStep(number, line, kind, parts[0], on, null)
-                        : Bad(number, line, "option takes an option number and 0 or 1");
+                        : Bad(number, line, "option takes an option number, and 0 or 1 to set it");
                 }
                 case "chat":
                 case "log":

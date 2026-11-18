@@ -20,6 +20,7 @@ namespace DaraletPlayer.Ui {
         private int? draggingLandscape;
         private int? draggingDetail;
         private int? draggingFar;
+        private int? draggingFog;
 
         private void RenderDrawDistance() {
             Widgets.TextColored(HeadingColor, "Draw Distance (Daralet Toolkit)");
@@ -103,6 +104,15 @@ namespace DaraletPlayer.Ui {
             Form.Label("Billboards", "Flat pictures of the trees past Scenery, out to Landscape's edge.");
 
             if (ImGui.Checkbox("Draw far trees as billboards##draw-distance-billboards", ref options.Billboards)) {
+                Changed();
+            }
+
+            Form.Label("Fog", "How thick the distance fog is. Lower pushes it further out.");
+            var fog = draggingFog ?? options.ClampedFog;
+
+            if (DragSlider("##draw-distance-fog", ref fog, DrawDistanceOptions.MinFog, 100,
+                fog >= 100 ? "100%% (the game's)" : "%d%%", ref draggingFog)) {
+                options.Fog = fog;
                 Changed();
             }
 
