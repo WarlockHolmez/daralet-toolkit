@@ -1144,6 +1144,156 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   (`m_colGameplayOptions`, `+0x9C`), changed with `PlayerModule::SetChatWindowOption(window, BaseProperty*)` (`0x5D66C0`),
   which takes the client's property objects, not yet built from the plugin: it opens the game's panel at that tab
   (`LetOpen`, then `ClientElements.OpenTab` once it's showing). Untested in the game when written.
+  **Draw distance** (`Ui/DrawDistance.cs`, `Ui/OptionsPanel.DrawDistance.cs`, `Feed/DrawDistanceOptions.cs`,
+  `SettingsData.DrawDistance`, off to start; the user's call, November 2026): a group of the Config page's after
+  Rendering Quality, the plugin's own, for drawing further than the game allows. The game makes scenery (trees,
+  bushes, rocks) only for landblocks in full detail: `CLandBlock::init_static_objs` (`0x531780`) returns unless the
+  block's side_cell_count (`+0x48`) is 8, and `LScape::get_block_orient` (`0x5059F0`) gives full detail only to blocks
+  1 landblock or less from yours (by the larger of the x and y offsets), a step of 2 to 2 or less, 4 to 4 or less, 8
+  past (side_cell_count 8 over the step): so trees only ever stand in the 3x3 landblocks round you, whatever the
+  Landscape Draw Distance. **Scenery** patches those three ring sizes, the immediates of each ring's `cmp eax,n` and
+  the `mov eax,n` after it (`0x505A16`/`25`, `41`/`50`, `57`/`66`), to R, R+1, R+3 (1 to 16; 5 at first, raised once Scenery density made far scenery affordable, to see how far it
+  goes, the user's call, November 2026), checking the opcodes and
+  the value first and leaving a client that differs alone, put back when off or at shutdown (VirtualProtect, the
+  plugin's first code patch). **Landscape** is `LScape::mid_radius`, the game's Landscape Draw Distance (the int at
+  `0x81FFB4`: its choices 3, 5, 8, 11, 15; the Graphics Quality preset sets it too, `0x54BC30`), applied with
+  `SmartBox::set_mid_radius` (`0x4531C0`, thiscall on `[0x83DA58]`), which releases every block and loads them again,
+  any radius of 1 or more being taken (`LScape::SetMidRadius`, `0x505660`; the LScape is SmartBox `+0xB0`); up to 24
+  here, set again once a second if the game puts its own back (a change of region does). The patched rings need that
+  reload too. **Detail** is the game's Degrade Distance, the float at `0x81FC68` (50 to start, its setting's storage),
+  which `GfxObjDegradeInfo::get_degrade` (`0x51EFC0`) takes off the distance before picking an object's level of
+  detail; up to 1000 here. That costs a lot of frame rate (tried in the game: all three sliders worked), since
+  everything out to it keeps finer models, so **Far scenery** (`LowDetailDistance`, `Ui/DrawDistance.Lod.cs`, up
+  to 3000 m) only stops far objects vanishing: `CPhysicsPart::UpdateViewerDistance` (`0x50EB00`) and
+  `UpdateViewerDistance_` (`0x50EC70`) skip a part whose chosen level's model (`gfxobj[deg_level]`, part `+0x20`) is
+  null, a tree's last level being empty; both calls to get_degrade (`0x50EC37`, `0x50ECC4`) are hooked
+  (`AcClient.Hook`, thiscall), and within that distance the nearest level down with a model is used instead, with its
+  mode (the degrade info's list at `+0x3C`, 20 bytes each, mode at `+4`; the part found as the level's address less
+  `0x14`); hooked only while wanted, removed at shutdown. It goes by the part's real distance: the one
+  `get_degrade` is given is the real one over the part's scale (`fdiv [esi+2Ch]`, `0x50EC2B`), so a big tree seemed
+  nearer than it was; the real one is the part's first field (CYpt, stored first, `0x50EB7E`, `0x50EC7B`).
+  **Plainer models sooner, tried and taken out** (November 2026): `get_degrade` (`0x51EFC0`) takes the distance less
+  the Degrade Distance, held at 0 or more, and picks the first level whose ideal distance (stretched by the game's
+  multiplier) it's under, so scaling the distance it's asked about past the Degrade Distance makes models plainer
+  sooner. Three ways were built through this hook: three **detail bands** (a start distance and a percent each; up
+  to 400% at first, which only did what Detail does), three **level distances** (a set distance for each model
+  level, every object alike), then one **Detail falloff** slider in their place (1x to 10x, the user's call: "a
+  single simplified slider that decides how quickly the detail lowers over distance"). None changed anything in the
+  game: much of the scenery has one real model then an empty last level (how the game hides a far tree), so a
+  falloff only reached the empty level sooner and Far scenery put the one real model back; and the frame rate's
+  cost is the number of objects, not their models. Wanted again with billboards, where "how soon a tree becomes a
+  billboard" is a falloff (the user's call). Their saved values (`modelDetail`..., `levelDistance1`...,
+  `detailFalloff`) are left unread. The game can force a level itself (`0x8452F4` non-zero, every object finest;
+  `0x81FC7C` not -1, every object that level, both read at the top of `get_degrade`).
+  Measured in the game before it (the user, November 2026): about 160 fps to 14 on a mountain top among big trees
+  with scenery and detail at their most, so the object count, not the models, is likely most of the cost; turning
+  model detail down didn't help either. **Scenery density** (`SceneryDensity`, 10% to 100%, `Ui/DrawDistance.Density.cs`,
+  `Feed/SceneryDensity.cs`; the user's call, November 2026): `CLandBlock::get_land_scenes` (`0x5311A0`) asks
+  `CLandBlock::on_road` (`0x530D30`, thiscall, the place's Vector3 in block meters) at `0x53150E` before making each
+  scenery object, and skips it on a road; that call is hooked (`AcClient.Call.CLandBlock__on_road_0x0053150E`), and an
+  object not on a road is called one when `SceneryDensity.Keeps` says so: a hash of the landblock id (the CLandBlock's
+  `+0x28`, which the game puts in the object's Position at `0x53155D`) and the place, under the percent, so the same
+  ones go every load and a lower density only takes more away. Buildings and the dats' placed objects don't pass
+  through it. A change loads the landscape again. It's the same everywhere, your own landblock too: the game only
+  rebuilds a block whose detail changes, so a block thinned for being far would stay thin as you walked into it.
+  Untested in the game when written. Lowering it gave fast gains in the game (the user, November 2026).
+  **Far scenery per frame, tried and taken out** (November 2026; rows Scenery cut-off, Thin far scenery and Slow far
+  models): the game draws a cell's objects in one loop (`0x507A50`), calling for each
+  `CPhysicsObj::UpdateViewerDistanceRecursive` (`0x511720`, at `0x507B17`) then `CPhysicsObj::DrawRecursive`
+  (`0x511760`, at `0x507B22`), and both calls were hooked to skip "scenery": a plain CPhysicsObj (vtable `0x7C78EC`;
+  CBuildingObj's is `0x807550`) with id 0 (`+8`) in an outdoor cell. **That loop isn't where the land's trees are
+  drawn**: it saw 1 to 7 such objects a frame at any scenery radius, and thinning them turned **the sky black**, so
+  they're the sky's pieces (dome, sun, moon); not one tree was reached. The cut-off went first (the point is foliage
+  as far as it'll go, and Scenery's radius ends it), the other two once the sky showed what they caught. Where the
+  land's static objects are drawn is still to be found (billboards need it). Kept for that: the camera is the
+  Position at `0x81FF10` that `UpdateViewerDistance` measures from (`Position::get_offset`, `0x50E3F0`); an object's
+  Position is at `+0x48` (vtable, cell id `+4`, Frame `+8`: quaternion, the 3x3 matrix, the origin at `+0x3C`); a
+  part keeps its object at `+0xE0`; a part's NoDraw bit is `draw_state` `+0x1C` bit 1 (`CPhysicsPart::Draw`
+  `0x50E270`, `SetNoDraw` `0x50E0E0`); the dats' placed objects are made with id 0 too (`0x53180B`). Their saved
+  values (`sceneryCutOff`, `farThinFrom`, `farThinPercent`, `slowModelsFrom`, `slowModelsEvery`) are left unread.
+  **Seen in the game** (November 2026): scenery 14 at 12%, landscape 24, Detail 1000 m and Far scenery 3000 m ran at
+  55 fps, then the screen went black once or twice; it hasn't come back since Detail went to the game's and the
+  scenery steps up in place (`[device]` lines in log.txt would show a lost device).
+  Scenery 4 to 5 landblocks is a big frame rate drop (seen in the game): 121 landblocks of scenery, every object's
+  parts still worked through each frame, whatever model they end up with. The game's own multiplier still applies on top (`deg_mul`
+  `0x86731C` while its automatic degrades, `0x81FC78`, are on, else its Object Degrade preference,
+  `s_rUserSuppliedDegradeBias` `0x867318`). Untested in the game when written. Sliders are used once let go, since each reloads the landscape. `[draw-distance]` lines in
+  log.txt, each radius change with the game's free address space. **A teleport crashed the game** with the landscape
+  at 24 and scenery at 5 (after five hot reloads): in `CPolygon::make_plane` (`0x539153`, called from
+  `CLandBlockStruct::AddPolygon`), reading a vertex through what looks like a null vertex array, likely an allocation
+  that failed (the client never checks them; not confirmed). So with under 512 MB of the 32-bit game's address space
+  free, the landscape and scenery go back to the game's, with a line in chat (`DrawDistance.Memory.cs`,
+  `GlobalMemoryStatusEx`'s `AvailVirtual`), and what ran out is remembered (`ranOutAt`, by `Cost`: landblocks of
+  scenery times the density, plus 2% of one per landscape block) so nothing as costly (90%) loads again this session;
+  and with under 1 GB free nothing costlier than what's loaded is loaded at all (`MayLoad`), since a big load could run
+  out before the once-a-second look. Seen in the game: scenery 10 at 20% left about 1.5 GB, 16 at 20% about 0.8 GB,
+  and 16 at 53% ran out. The warning wraps on the page with the controls still there, and buttons to go back to the
+  last settings that loaded before those (`FallBack`) or the game's own (the user's call, November 2026); any
+  change tries again (`Soon` lifts the cap). **Settings saved too big crashed the game at every login** (scenery 16
+  at 53%, landscape 24; `0x5393E4`, near the first crash's address): nothing was loaded yet and 2.8 GB was free, so
+  neither rule stopped it, and `ranOutAt` doesn't outlive the game. So `MayLoad` also estimates: `MegabytesPerCost`
+  (8; the game showed nearly 7, scenery 5 to 16 at 20% taking about 1.3 GB) times the cost added must leave 768 MB
+  free, or nothing further loads and the page says why. At login the cost loaded is the game's own. Each load's real
+  use goes in log.txt 5 seconds after it ("loaded cost ... MB a unit"), to correct the 8 by. **Big cold loads crash
+  the game whatever the memory**: scenery 1 to 16 at 14% density, with 2.7 GB free and the estimate content, crashed
+  in `CPolygon::UnPack` (`0x5393C6`, called from `CCellStruct::UnPack`, `0x534A40`, the cells of buildings and
+  dungeons that come with each landblock) reading past the end of its dat data, as if its buffer was let go while in
+  use; the login and teleport crashes (`0x5393E4`, `0x539153` in `make_plane`) are in the same code. Earlier, 5, 7,
+  10, 15, 16 a step at a time held: each step reads only one more ring, the rest still in the game's cache. So the
+  draw distance **steps up** (`Feed/DrawDistanceRamp.cs`, `Ui/DrawDistance.Ramp.cs`): 2 scenery rings and 3 landscape
+  rings a step, 4 seconds apart, down at once; at login, on any raise, and after a teleport: in portal space (Decal's
+  `CharacterFilter.ChangePortalMode`) it goes back to the game's own, so the new place loads at the game's size, and
+  steps up 4 seconds after you're out. The cost loaded is what each step has loaded, so the memory estimate follows
+  the steps. `[draw-distance] stepping up` lines in log.txt. **Steps still crashed** (scenery 11 to 13 at 12%, in
+  `make_plane`, 1.6 GB "free"): each step's `set_mid_radius` lets go of every block and loads them all again, and
+  for a moment old and new overlap, 600 to 800 MB more than it keeps (the frame rate log's free memory showed it),
+  in a 32-bit address space whose free room is in pieces. So a change of the scenery's rings alone no longer reloads
+  (`Ui/DrawDistance.Refresh.cs`): it does what `LScape::update_loadpoint` (`0x507730`) does on entering another
+  landblock, for the load point it has (the LScape's `+0x10`) and no move: the grid update `0x506E00` (thiscall:
+  cell id, east and north in blocks, 1 to start from nothing; `ret 10h`), which fills empty places and remakes only
+  the blocks whose `get_block_orient` changed (`0x507509`, `notify_change_size` `0x507525`, CLandBlockStruct's
+  generate `0x5338F0`), then `0x5066D0` (thiscall: the LScape's `+0x14`, block changed; `ret 8`), the cells in
+  sight. A block that becomes full detail gets its trees from `LScape::grab_visible_cells` (`0x505920`:
+  `init_buildings` `0x505947`, `init_static_objs` `0x505989`), which nothing calls after those two: the game calls
+  it when the player enters another cell (every 24 m: `CLandCell::release_cells` `0x533AE0` then
+  `CLandCell::grab_visible_cells` `0x533AD0`, each a jump to the LScape at `[0x8456F0]`'s `release_visible_cells`
+  `0x5059B0` and `grab_visible_cells`, no arguments). The first build didn't, so after a density change stepped back
+  up to 14 the distance stayed bare (memory went up by a GB: the ground, not the trees). The second build called that
+  release and grab after the refresh: trees came, then the next step crashed in `RefreshBlocks` (an
+  AccessViolationException, from Decal's RenderPreUI). Now, for each full-detail block with no objects yet
+  (`+0x104`), it calls the three per-block functions `grab_visible_cells` calls, each safe to ask again:
+  `init_buildings` (`0x530AC0`, guarded by `+0x11C`), `init_static_objs` (`0x531780`, one argument, 0; `ret 4`;
+  with objects it only refits them to the ground, `0x530C30`) and `0x5300F0` (the block's cells, once, `+0xE8`);
+  the cells in sight (CEnvCell's indoor ones, `0x5301A0`) are left to the game's next change of cell. The landscape radius and Scenery
+  density still reload whole, but a **density change** first brings the scenery down to the game's in place, does
+  its reload there the next frame, with only the nine near blocks' scenery to remake, then steps up again in place
+  (the user's call, November 2026: at scenery 14 a whole reload would overlap old and new as the crashes did). Seen
+  at scenery 14, 12%: 1.3 GB free in one piece of 1.15 GB, so the address space isn't in pieces, and the device
+  stayed fine. Tried in the game: login to scenery 14 at 12% stepped up with four short hangs (0.3 s
+  each) and no crash, free memory going down steadily with no spikes. **The flat 9 fps stretches** (110 ms every
+  frame, about 35 seconds, then back) came with and without a black screen, Detail high or not: it's the game
+  slowing itself behind another window (confirmed: the window went behind at the drop and came back with the frame
+  rate), the player alt-tabbed to type to Claude. The Frame Rate window now logs
+  (`Ui/FrameRateWindow.Device.cs`, `[device]` lines) the game's window going behind or in front, the Direct3D
+  device's state when it changes (`Device.CheckCooperativeLevel`: lost, waiting to be reset), and every 10 seconds
+  the address space's free room, largest free piece and pieces of 1 MB or more (`VirtualQuery`), so the next black
+  screen says whether it was a lost device or a 32-bit address space in pieces. **Frame Rate**
+  (`Ui/FrameRateWindow.cs`, `Feed/FrameStats.cs`, `FrameSummary.cs`; `frame-rate`, hidden to start, its switch the
+  group's first row; the user's call, November 2026, "to really know if the settings are helping"): each of Decal's
+  RenderFrames is a game frame, timed with a Stopwatch from login on, whether the window shows or not, two minutes
+  kept. It shows the last second's rate, the last 10 seconds' average, 1% low (the 99th percentile frame time) and
+  worst frame, a graph of the last minute, and the last mark's before and after (15 seconds each way, the first 3
+  after left out for the reload; a frame over a second is a pause, counted and left out). Every change here marks the
+  graph with the settings in a line (`DrawDistanceOptions.Summary`), and its Mark button with "Mark n". **The frame
+  rate log** (`Feed/FrameRateLog.cs`; the user's call, November 2026, so Claude can read what each setting did after
+  the player has tried them): a .csv a session in `Frame Rate Logs` (`<character> yyyy-MM-dd HH-mm-ss.csv`),
+  written from login whether the window shows or not: a `second` row once a second (fps, 1% low, worst and average
+  frame, pauses, free MB, the settings in a line) and a `change` row 18 seconds after each change or Mark
+  (`FrameStats.Around`: the 15 seconds after, the reload's first 3 left out, against the 15 before, from the change
+  before's settling on). To read one: the `change` rows sum up each experiment; the `second` rows show the rest. A
+  fair comparison needs the player standing still facing the same way. Untested in the game when written. Found with the
+  throwaway Iced disassembler, and UtilityBelt.Service's `AcClient` decompiled (ilspycmd) for
+  the names and addresses. Untested in the game when written.
   **Buffs and Debuffs** (`Ui/EffectsPanel.cs`, one class made twice, keys `buffs` and `debuffs`): the game's Positive and
   Negative Magic panels (panels 4 and 5, gmEffectsUI, layout `0x2100001B`, 300x362, property `0x1000000C` 1 or 2), by
   `GamePanelInterceptor`. The spells on you from Decal's `CharacterFilter.Enchantments`, beneficial or harmful by the
@@ -2035,7 +2185,7 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   their Update link falls back to their own `LatestPageUrl`, since a release page under the new name isn't one of theirs. No Decal plugin known (October 2026) downloads and installs its own updates; UtilityBelt's
   is a notice like this one, and the loader updating the plugin itself was left for later.
 - **Everything the plugin writes** goes in `Documents\Decal Plugins\Daralet Toolkit` (`DataFolder`): `settings.json`,
-  `profiles.json`, `Settings Profiles`, `Settings Exports`, `log.txt`, `Loot Profiles`, `Hotbar Layouts`, `Combat Logs`, `Chat Logs`, `world-data`. It was `Decal Plugins\Daralet` before the rename: `PluginCore.Startup` moves
+  `profiles.json`, `Settings Profiles`, `Settings Exports`, `log.txt`, `Loot Profiles`, `Hotbar Layouts`, `Combat Logs`, `Chat Logs`, `Frame Rate Logs`, `world-data`. It was `Decal Plugins\Daralet` before the rename: `PluginCore.Startup` moves
   that folder over first thing (`DataFolder.MoveOldFolder`, `FolderMove.Once`, copying instead if a file's held open),
   unless the new one is already there. Only startup does it, so a test that asks `DataFolder` for a path doesn't move
   the developer's real folder. Only files a player drops in by hand (`dereth-map.png`, `locations.xml`) are looked for

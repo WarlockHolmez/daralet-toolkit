@@ -1,0 +1,338 @@
+using System;
+using System.Runtime.InteropServices;
+using DaraletPlayer.Feed;
+using Decal.Adapter;
+
+namespace DaraletPlayer.Ui {
+    /// <summary>
+    /// Draw distance past the game's own settings (DrawDistanceOptions, the Options window's Config page; the user's
+    /// call, November 2026). Read from acclient.exe (the end-of-retail build every client here is):
+    /// <para>
+    /// Scenery (trees, bushes, rocks) is only made for a landblock drawn in full detail: CLandBlock::init_static_objs
+    /// (0x531780) returns unless the block's side_cell_count (+0x48) is 8. Which blocks are full detail is
+    /// LScape::get_block_orient (0x5059F0): by the larger of the block's x and y offsets from yours in landblocks, 1 or
+    /// less is full detail (a step of 1), 2 or less a step of 2, 4 or less 4, and the rest 8, side_cell_count being 8 over
+    /// the step. So the game only ever has scenery in the 3x3 landblocks round you, whatever its Landscape Draw Distance.
+    /// The three ring sizes are immediates in that function (the cmp and the mov after it, which the ring's edge
+    /// directions are worked out from), patched here to R, R+1 and R+3, and put back when this is off or the plugin stops.
+    /// </para>
+    /// <para>
+    /// The landscape's radius (LScape::mid_radius, how many landblocks out are loaded at all) is the game's Landscape Draw
+    /// Distance, the int at 0x81FFB4 (its choices set 3, 5, 8, 11 or 15), applied with SmartBox::set_mid_radius
+    /// (0x4531C0, thiscall on the SmartBox at [0x83DA58]), which releases every block and loads them again; any radius of
+    /// 1 or more is taken (LScape::SetMidRadius, 0x505660). The game sets it again from 0x81FFB4 on some changes of
+    /// region, so it's looked at once a second and set again. The patched rings need the same reload to take effect.
+    /// </para>
+    /// <para>
+    /// Detail: GfxObjDegradeInfo::get_degrade (0x51EFC0) takes the game's Degrade Distance (the float at 0x81FC68, 50
+    /// to start) off the distance before picking an object's level of detail, so a bigger one keeps far objects
+    /// detailed. Set once a second while wanted, and what it was put back after.
+    /// </para>
+    /// Before writing a byte, each patched instruction is checked to be what's expected; a client that differs is left
+    /// alone. Far scenery at low detail is DrawDistance.Lod.cs. `[draw-distance]` lines in log.txt. Untested in the game when written.
+    /// </summary>
+    internal sealed partial class DrawDistance : IDisposable {
+        private const uint SmartBoxPointer = 0x83DA58;
+        private const uint SetMidRadiusAddress = 0x4531C0;
+        private const int SmartBoxLScape = 0xB0;
+        private const uint GameLandscapeRadius = 0x81FFB4;
+        private const uint DegradeDistance = 0x81FC68;
+        private const uint PageExecuteReadWrite = 0x40;
+
+        /// <summary>Each ring's cmp and mov in get_block_orient: where, the opcode bytes, the value's size.</summary>
+        private static readonly (uint At, byte[] Opcode, int Size, int Ring)[] Sites = {
+            (0x505A16, new byte[] { 0x83, 0xF8 }, 1, 0), (0x505A25, new byte[] { 0xB8 }, 4, 0),
+            (0x505A41, new byte[] { 0x83, 0xF8 }, 1, 1), (0x505A50, new byte[] { 0xB8 }, 4, 1),
+            (0x505A57, new byte[] { 0x83, 0xF8 }, 1, 2), (0x505A66, new byte[] { 0xB8 }, 4, 2),
+        };
+
+        /// <summary>The game's ring sizes: full detail, a step of 2, a step of 4.</summary>
+        private static readonly int[] GameRings = { 1, 2, 4 };
+
+        private readonly Settings settings;
+        private int patchedRadius = DrawDistanceOptions.GameSceneryRadius;
+        private float? gameDegradeDistance;
+        private DateTime nextLook;
+        private bool broken;
+        private bool disposed;
+
+        [UnmanagedFunctionPointer(CallingConvention.ThisCall)]
+        private delegate int SetMidRadiusCall(IntPtr smartBox, int radius);
+
+        public DrawDistance(Settings settings) {
+            this.settings = settings;
+            CoreManager.Current.RenderFrame += Core_RenderFrame;
+            ListenForPortals();
+        }
+
+        private DrawDistanceOptions Options => settings.Data.DrawDistance;
+
+        /// <summary>Why it can't be used on this client, or null.</summary>
+        /// <summary>Why it can't be used at all on this client, or null.</summary>
+        public string Problem => broken ? "This client isn't the one the draw distance was worked out for: it's left alone."
+            : null;
+
+        /// <summary>Why the far settings aren't all loaded for want of memory, or null.</summary>
+        public string MemoryWarning => broken ? null : MemoryProblem;
+
+        /// <summary>
+        /// Looks again now, rather than within a second: a setting just changed. After running out of memory, that's
+        /// trying again (most likely with less), so the cap is lifted; MayLoad still keeps out anything as costly.
+        /// </summary>
+        public void Soon() {
+            nextLook = DateTime.MinValue;
+            memoryCapped = false;
+            memoryWarned = false;
+        }
+
+        private void Core_RenderFrame(object sender, EventArgs e) {
+            try {
+                if (disposed) {
+                    return;
+                }
+
+                if (DateTime.UtcNow < nextLook || CoreManager.Current.CharacterFilter.LoginStatus != 3) {
+                    return;
+                }
+
+                nextLook = DateTime.UtcNow.AddSeconds(1);
+                Apply();
+            }
+            catch (Exception ex) {
+                broken = true;
+                PluginCore.LogFile("[draw-distance] " + ex);
+            }
+        }
+
+        private unsafe void Apply() {
+            var options = Options;
+            var on = options.On && !broken;
+            var reload = false;
+            var ringsChanged = false;
+            var gameLandscape = *(int*)GameLandscapeRadius;
+            var wantedLandscape = options.ClampedLandscapeRadius > 0 ? options.ClampedLandscapeRadius : gameLandscape;
+            var wanted = Cost(options.ClampedSceneryRadius, options.ClampedSceneryDensity, wantedLandscape);
+            MeasureLoad();
+
+            if (loadedCost <= 0) {
+                // at login what's loaded is the game's own: the first far settings are measured against it
+                loadedCost = Cost(DrawDistanceOptions.GameSceneryRadius, 100, gameLandscape);
+            }
+
+            var costBefore = loadedCost;
+            var far = on && !LowOnMemory(on, wanted);
+
+            if (far && !MayLoad(wanted)) {
+                // too little memory to draw further: what's loaded stays as it is, and the rest still applies
+                ApplyDetail(options.ClampedDetailDistance);
+                ApplyLowDetail(options.ClampedLowDetailDistance);
+                return;
+            }
+
+            if (!far) {
+                raiseRefused = null;
+            }
+
+            var smartBox = *(IntPtr*)SmartBoxPointer;
+            var lscape = smartBox == IntPtr.Zero ? IntPtr.Zero : *(IntPtr*)((byte*)smartBox + SmartBoxLScape);
+            var aiming = far && !inPortal;
+            var wantedDensity = far ? options.ClampedSceneryDensity : 100;
+
+            // a density change remakes every block's scenery, which only a whole reload does, and a whole reload with
+            // far scenery loaded overlaps old and new for a moment, which crashed the game: so the scenery first goes
+            // down to the game's in place, the reload is done there, and then it steps up again (the user's call,
+            // November 2026)
+            var densityChanging = wantedDensity != appliedDensity;
+            var targetScenery = aiming && !densityChanging ? options.ClampedSceneryRadius
+                : DrawDistanceOptions.GameSceneryRadius;
+            var targetLandscape = aiming ? wantedLandscape : gameLandscape;
+            var loadedLandscape = lscape != IntPtr.Zero ? *(int*)lscape : targetLandscape;
+            var (scenery, landscape) = NextStep(patchedRadius, targetScenery, loadedLandscape, targetLandscape);
+
+            // the scenery comes down in place this pass, and the density's reload waits for the next
+            var sceneryWasUp = patchedRadius > DrawDistanceOptions.GameSceneryRadius;
+
+            if (scenery != patchedRadius && !broken) {
+                if (!PatchRings(scenery)) {
+                    return;
+                }
+
+                PluginCore.LogFile($"[draw-distance] scenery radius {patchedRadius} -> {scenery}"
+                    + $" ({FreeMegabytes()} MB free)");
+                patchedRadius = scenery;
+                ringsChanged = true;
+            }
+
+            if (densityChanging && sceneryWasUp) {
+                PluginCore.LogFile($"[draw-distance] scenery density {appliedDensity}% -> {wantedDensity}% waits for the "
+                    + "scenery to come down first");
+
+                // the next frame, not a second from now: the scenery's already down (not Soon, which lifts a memory cap)
+                nextLook = DateTime.MinValue;
+            }
+            else if (ApplyDensity(wantedDensity)) {
+                reload = true;
+
+                // the scenery steps up again from here, after the reload's had its time
+                nextStepAt = DateTime.UtcNow.AddSeconds(DrawDistanceRamp.StepSeconds);
+            }
+
+            // what's loaded now, a step on the way or all of it, for the memory estimate and the way back
+            var cost = Cost(scenery, appliedDensity, landscape);
+
+            if (aiming && scenery == targetScenery && landscape == targetLandscape) {
+                NoteLoaded(options.ClampedSceneryRadius, options.ClampedSceneryDensity, options.ClampedLandscapeRadius,
+                    cost);
+            }
+            else {
+                loadedCost = cost;
+            }
+
+            if (lscape != IntPtr.Zero && landscape >= 1 && (reload || *(int*)lscape != landscape)) {
+                PluginCore.LogFile($"[draw-distance] landscape radius {*(int*)lscape} -> {landscape}"
+                    + $" ({FreeMegabytes()} MB free)");
+                LoadStarting(costBefore);
+                var setMidRadius = Marshal.GetDelegateForFunctionPointer<SetMidRadiusCall>((IntPtr)SetMidRadiusAddress);
+                setMidRadius(smartBox, landscape);
+            }
+            else if (lscape != IntPtr.Zero && ringsChanged) {
+                // only the scenery's rings: the blocks whose detail changed are remade where they are, the rest left
+                LoadStarting(costBefore);
+                RefreshBlocks(lscape);
+            }
+
+            ApplyDetail(on ? options.ClampedDetailDistance : 0);
+            ApplyLowDetail(on ? options.ClampedLowDetailDistance : 0);
+        }
+
+        /// <summary>The Degrade Distance wanted, or 0 to put the game's back.</summary>
+        private unsafe void ApplyDetail(int meters) {
+            var degrade = (float*)DegradeDistance;
+
+            if (meters > 0) {
+                gameDegradeDistance = gameDegradeDistance ?? *degrade;
+
+                if (*degrade != meters) {
+                    *degrade = meters;
+                }
+
+                return;
+            }
+
+            if (gameDegradeDistance.HasValue) {
+                *degrade = gameDegradeDistance.Value;
+                gameDegradeDistance = null;
+            }
+        }
+
+        /// <summary>Sets get_block_orient's rings for a full-detail radius; false if the code isn't as expected.</summary>
+        private unsafe bool PatchRings(int radius) {
+            var rings = radius == DrawDistanceOptions.GameSceneryRadius ? GameRings
+                : new[] { radius, radius + 1, radius + 3 };
+
+            foreach (var site in Sites) {
+                var code = (byte*)site.At;
+
+                for (var i = 0; i < site.Opcode.Length; i++) {
+                    if (code[i] != site.Opcode[i]) {
+                        broken = true;
+                        PluginCore.LogFile($"[draw-distance] 0x{site.At:X} isn't the code expected: left alone");
+                        return false;
+                    }
+                }
+
+                // the value now has to be one this sets: the game's or one of ours, never anything else
+                var value = site.Size == 1 ? code[site.Opcode.Length] : *(int*)(code + site.Opcode.Length);
+
+                if (value < 1 || value > DrawDistanceOptions.MaxSceneryRadius + 3) {
+                    broken = true;
+                    PluginCore.LogFile($"[draw-distance] 0x{site.At:X} holds {value}, not a ring size: left alone");
+                    return false;
+                }
+            }
+
+            foreach (var site in Sites) {
+                var target = (IntPtr)(site.At + (uint)site.Opcode.Length);
+
+                if (!VirtualProtect(target, (UIntPtr)site.Size, PageExecuteReadWrite, out var old)) {
+                    broken = true;
+                    PluginCore.LogFile($"[draw-distance] couldn't unprotect 0x{site.At:X}: {Marshal.GetLastWin32Error()}");
+                    return false;
+                }
+
+                if (site.Size == 1) {
+                    *(byte*)target = (byte)rings[site.Ring];
+                }
+                else {
+                    *(int*)target = rings[site.Ring];
+                }
+
+                VirtualProtect(target, (UIntPtr)site.Size, old, out _);
+            }
+
+            FlushInstructionCache(GetCurrentProcess(), (IntPtr)Sites[0].At, (UIntPtr)0x60);
+            return true;
+        }
+
+        public void Dispose() {
+            if (disposed) {
+                return;
+            }
+
+            disposed = true;
+            CoreManager.Current.RenderFrame -= Core_RenderFrame;
+            StopListeningForPortals();
+
+            // the game's own back, whatever the reason this is going: a hot reload, the plugin turned off. The landscape is
+            // only loaded again if the rings or its radius were this class's
+            try {
+                var reload = false;
+
+                if (!broken && patchedRadius != DrawDistanceOptions.GameSceneryRadius
+                    && PatchRings(DrawDistanceOptions.GameSceneryRadius)) {
+                    patchedRadius = DrawDistanceOptions.GameSceneryRadius;
+                    reload = true;
+                }
+
+                if (appliedDensity < 100) {
+                    appliedDensity = 100;
+                    reload = true;
+                }
+
+                UnhookOnRoad();
+                UnhookGetDegrade();
+                ReloadAtGameRadius(reload);
+                ApplyDetail(0);
+            }
+            catch (Exception ex) {
+                PluginCore.LogFile("[draw-distance] " + ex);
+            }
+        }
+
+        /// <summary>The landscape loaded again at the game's radius, if it isn't at it or the rings changed.</summary>
+        private unsafe void ReloadAtGameRadius(bool ringsChanged) {
+            if (CoreManager.Current.CharacterFilter.LoginStatus != 3) {
+                return;
+            }
+
+            var smartBox = *(IntPtr*)SmartBoxPointer;
+            var lscape = smartBox == IntPtr.Zero ? IntPtr.Zero : *(IntPtr*)((byte*)smartBox + SmartBoxLScape);
+            var radius = *(int*)GameLandscapeRadius;
+
+            if (lscape == IntPtr.Zero || radius < 1 || (!ringsChanged && *(int*)lscape == radius)) {
+                return;
+            }
+
+            Marshal.GetDelegateForFunctionPointer<SetMidRadiusCall>((IntPtr)SetMidRadiusAddress)(smartBox, radius);
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool VirtualProtect(IntPtr address, UIntPtr size, uint newProtect, out uint oldProtect);
+
+        [DllImport("kernel32.dll")]
+        private static extern bool FlushInstructionCache(IntPtr process, IntPtr address, UIntPtr size);
+
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr GetCurrentProcess();
+    }
+}

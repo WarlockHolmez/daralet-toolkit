@@ -402,6 +402,9 @@ namespace DaraletPlayer {
         /// <summary>The Book window (BookPanel).</summary>
         [DataMember(Name = "book")] public BookOptions Book;
 
+        /// <summary>Draw distance past the game's own settings (DrawDistance, the Options window's Config).</summary>
+        [DataMember(Name = "drawDistance")] public DrawDistanceOptions DrawDistance;
+
         /// <summary>The Radar window (RadarPanel).</summary>
         [DataMember(Name = "radar")] public RadarOptions Radar;
 
@@ -573,6 +576,7 @@ namespace DaraletPlayer {
             Indicators = new IndicatorOptions();
             Link = new LinkOptions();
             Book = new BookOptions();
+            DrawDistance = new DrawDistanceOptions();
             Radar = new RadarOptions();
             Attributes = new AttributesOptions();
             Spellbook = new SpellbookOptions();

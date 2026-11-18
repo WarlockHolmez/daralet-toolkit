@@ -55,6 +55,12 @@ namespace DaraletPlayer.Ui {
                     foreach (var option in options) {
                         RenderConfigRow(option, retail);
                     }
+
+                    // the plugin's own draw distance, beside the game's graphics settings it goes past
+                    if (title == ConfigOptions.RenderingGroup) {
+                        GamePanelArt.GoldBar(retail);
+                        RenderDrawDistance();
+                    }
                 }
             }
 
