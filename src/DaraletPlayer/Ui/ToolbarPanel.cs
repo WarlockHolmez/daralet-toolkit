@@ -123,7 +123,7 @@ namespace DaraletPlayer.Ui {
                 var payload = ImGui.AcceptDragDropPayload(InventoryBrowser.DragType);
 
                 if (payload.NativePtr != null && payload.IsDelivery()) {
-                    ToolbarButtons.PutInMainPack(InventoryBrowser.DraggedItem);
+                    PutInMainPack(InventoryBrowser.DraggedItem);
                 }
 
                 ImGui.EndDragDropTarget();
@@ -138,7 +138,7 @@ namespace DaraletPlayer.Ui {
             if ((caught || GameDrag.ReleasedOverLastItem()) && SpellDrag.Spell == 0) {
                 var id = CoreManager.Current.Actions.CurrentSelection;
                 PluginCore.LogFile($"[toolbar] 0x{id:X8} let go over the backpack: into the main pack");
-                ToolbarButtons.PutInMainPack(id);
+                PutInMainPack(id);
             }
         }
 

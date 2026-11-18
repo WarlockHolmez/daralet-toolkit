@@ -44,6 +44,9 @@ namespace DaraletPlayer.Ui {
         /// <summary>The least an attached window can be dragged to.</summary>
         private const float MinAttachedHeight = 150;
 
+        /// <summary>The Book window's id, which starts out of the shared window (SeparateBookOnce).</summary>
+        private const string BookId = "book";
+
         /// <summary>The least height of the strip along the edge that sizes an attached window.</summary>
         private const float MinGripHeight = 6;
 
@@ -74,7 +77,7 @@ namespace DaraletPlayer.Ui {
                 ("map", "Map", map),
                 ("social", "Social", social),
                 ("quests", "Quests", quests),
-                ("character", "Character", character),
+                ("character", "Character Stats", character),
             };
             windows.AddRange(more);
 
@@ -121,21 +124,44 @@ namespace DaraletPlayer.Ui {
 
         /// <summary>
         /// Settings from before the windows chose for themselves (no SharedWindowSeparate yet): the windows that weren't
-        /// ticked to share are kept separate, and the shared window is switched on, as it now is for everyone.
+        /// ticked to share are kept separate, and the shared window is switched on, as it now is for everyone. And the
+        /// Book window, once one of it, taken out once: a book opens by itself, not from the toolbar, so it starts in a
+        /// window of its own (the user's call, November 2026).
         /// </summary>
         private void Upgrade() {
             var data = settings.Data;
 
             if (data.SharedWindowSeparate != null) {
+                SeparateBookOnce(data);
                 return;
             }
 
             var members = data.SharedWindowMembers ?? new List<string>();
             data.SharedWindowSeparate = windows.Select(w => w.Id).Where(id => !members.Contains(id)).ToList();
             data.SharedWindow = true;
+            SeparateBookOnce(data);
             settings.Changed();
             PluginCore.LogFile("[shared-window] on, every window sharing it but "
                 + (data.SharedWindowSeparate.Count == 0 ? "none" : string.Join(", ", data.SharedWindowSeparate)));
+        }
+
+        /// <summary>
+        /// Takes the Book window out of the shared window, once for any settings: it started in it. Where it shows then is
+        /// its own place (its default, never having had one).
+        /// </summary>
+        private void SeparateBookOnce(SettingsData data) {
+            if (data.SharedWindowBookSeparated) {
+                return;
+            }
+
+            data.SharedWindowBookSeparated = true;
+
+            if (!data.SharedWindowSeparate.Contains(BookId)) {
+                data.SharedWindowSeparate.Add(BookId);
+            }
+
+            settings.Changed();
+            PluginCore.LogFile("[shared-window] the Book window now opens in a window of its own");
         }
 
         /// <summary>
@@ -458,14 +484,14 @@ namespace DaraletPlayer.Ui {
             current = id;
         }
 
-        /// <summary>The Client UI Override section's switches: on or off, which windows, the tabs, and attached.</summary>
-        public void RenderSettings() {
+        /// <summary>Client UI Override's Shared row: on or off, the tabs, and attached, in a Form.Flow row.</summary>
+        public void RenderSettings(ref bool first) {
             var data = settings.Data;
-            var first = true;
 
             if (Form.FlowCheck(ref first, "Shared window##shared-window", ref data.SharedWindow,
-                "The Inventory, Map, Social, Quests, Character and game panel windows share one place on screen, as the "
-                + "game's panels do: opening one, from the toolbar or anywhere, shows it there in place of the one before. "
+                "The Inventory, Map, Social, Quests, Character Stats and game panel windows share one place on screen, as "
+                + "the game's panels do: opening one, from the toolbar or anywhere, shows it there in place of the one "
+                + "before. "
                 + "They share one position and size. To keep one out, use Separate at the end of the shared window's tabs, "
                 + "or untick Share with the other panels in its right-click menu; tick it again to put it back.")) {
                 settings.Changed();
@@ -482,8 +508,9 @@ namespace DaraletPlayer.Ui {
                 "Puts the shared window right above the toolbar and as wide, as tall as the game's panels, and keeps it "
                 + "there, following the toolbar when it's moved: it can't be dragged. Drag its top edge to make it taller "
                 + "or shorter (the game's own panels stay as they are); double-click that edge to match them again. It "
-                + "takes turns with the game's panels: one opening (the skills, the options, or any toolbar button not "
-                + "drawn over) closes it, and opening one of its windows closes the game's panel.")) {
+                + "takes turns with the game's panels: one opening (from the game's toolbar or keys, or a Toolbar window "
+                + "button whose window isn't overridden) closes it, and opening one of its windows closes the game's "
+                + "panel.")) {
                 settings.Changed();
             }
 

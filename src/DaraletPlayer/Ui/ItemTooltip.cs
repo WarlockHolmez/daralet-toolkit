@@ -9,7 +9,7 @@ using ImGuiNET;
 namespace DaraletPlayer.Ui {
     /// <summary>
     /// An item's tooltip: the lines ItemLines makes, coloured by kind, with each stat's roll quality at the right. Shared by
-    /// the bank, the Loot tab, the Corpse window and market search, so the layout is changed in ItemLines for all of them.
+    /// the bank, the Looter, the Corpse window and market search, so the layout is changed in ItemLines for all of them.
     /// </summary>
     internal static class ItemTooltip {
         public static readonly Vector4 Title = new Vector4(1f, 0.92f, 0.6f, 1f);
@@ -24,7 +24,7 @@ namespace DaraletPlayer.Ui {
         /// <summary>Space between the longest line and the roll quality column, in widths of the font's size.</summary>
         private const float QualityGap = 1.5f;
 
-        /// <summary>The Loot tab's Item details text size (SettingsData.ItemTextScale), set by PlayerHud.</summary>
+        /// <summary>The Looter's Item details text size (SettingsData.ItemTextScale), set by PlayerHud.</summary>
         public static Func<float> Scale = () => 1;
 
         /// <summary>
@@ -80,7 +80,7 @@ namespace DaraletPlayer.Ui {
             ImGui.EndTooltip();
         }
 
-        /// <summary>Each loot outcome's colour, as the Loot tab's rule list shows it.</summary>
+        /// <summary>Each loot outcome's colour, as the Looter's rule list shows it.</summary>
         public static Vector4 OutcomeColor(LootOutcome outcome) {
             switch (outcome) {
                 case LootOutcome.Keep: return Colors.Good;

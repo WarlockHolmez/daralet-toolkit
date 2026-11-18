@@ -199,7 +199,7 @@ namespace DaraletPlayer {
         [DataMember(Name = "lootGrid")] public bool LootGrid;
 
         /// <summary>
-        /// The Loot tab's rule list width in pixels, from before Panes; moved into PaneSizes the first time it's drawn.
+        /// The Looter's rule list width in pixels, from before Panes; moved into PaneSizes the first time it's drawn.
         /// </summary>
         [DataMember(Name = "lootRuleListWidth")] public float LootRuleListWidth;
 
@@ -245,21 +245,22 @@ namespace DaraletPlayer {
         /// <summary>Join and Invite links on the lines /lfgroup and /lfmore post in the LFG channel (LfgChatLinks).</summary>
         [DataMember(Name = "lfgChatLinks")] public bool LfgChatLinks;
 
-        // The game toolbar's buttons drawn again over its own, opening the plugin's window instead (ToolbarButtons).
+        // Which plugin windows stand in for the game's panels, from the Toolbar and Indicators windows (WindowOverrides).
+        // The names are from when they drew the game toolbar's buttons again over its own.
 
-        /// <summary>The backpack opens the Inventory window.</summary>
+        /// <summary>The Toolbar window's backpack opens the Inventory window.</summary>
         [DataMember(Name = "toolbarInventory")] public bool ToolbarInventory;
 
-        /// <summary>The Contracts button opens the Quests window.</summary>
+        /// <summary>The Toolbar window's Contracts button opens the Quests window.</summary>
         [DataMember(Name = "toolbarQuests")] public bool ToolbarQuests;
 
-        /// <summary>The Map button opens the Map window.</summary>
+        /// <summary>The Toolbar window's Map button opens the Map window.</summary>
         [DataMember(Name = "toolbarMap")] public bool ToolbarMap;
 
-        /// <summary>The Character Information button (the burden pack) opens the Character window.</summary>
+        /// <summary>The Indicator Bar window's burden pack opens the Character Stats window.</summary>
         [DataMember(Name = "toolbarCharacter")] public bool ToolbarCharacter;
 
-        /// <summary>The Social button (the two heads) opens the Social window.</summary>
+        /// <summary>The Toolbar window's Social button opens the Social window.</summary>
         [DataMember(Name = "toolbarSocial")] public bool ToolbarSocial;
 
         /// <summary>
@@ -281,6 +282,12 @@ namespace DaraletPlayer {
         /// </summary>
         [DataMember(Name = "sharedWindowSeparate")] public List<string> SharedWindowSeparate;
 
+        /// <summary>
+        /// The Book window has been taken out of the shared window once (SharedWindow.Upgrade): it started in it, then was
+        /// made to start in its own window (the user's call, November 2026). Put back by hand after that, it stays.
+        /// </summary>
+        [DataMember(Name = "sharedWindowBookSeparated")] public bool SharedWindowBookSeparated;
+
         /// <summary>A row of tabs at the top of the shared window, one for each window in it.</summary>
         [DataMember(Name = "sharedWindowTabs")] public bool SharedWindowTabs;
 
@@ -299,8 +306,8 @@ namespace DaraletPlayer {
         [DataMember(Name = "toolkitKey")] public HotkeyBinding ToolkitKey;
 
         /// <summary>
-        /// How big item details are drawn, times the Text size: the tooltips over items and the Appraisal windows (the Loot
-        /// tab's Item details). 1 is normal.
+        /// How big item details are drawn, times the Text size: the tooltips over items and the Appraisal windows (the Looter's
+        /// Item details). 1 is normal.
         /// </summary>
         [DataMember(Name = "itemTextScale")] public float ItemTextScale;
 
@@ -363,7 +370,7 @@ namespace DaraletPlayer {
 
         [DataMember(Name = "loot")] public LootData Loot;
 
-        /// <summary>The plugin's chat windows (the Chat tab).</summary>
+        /// <summary>The plugin's chat windows (the Config tab's Chat).</summary>
         [DataMember(Name = "chat")] public ChatSettings Chat;
         /// <summary>How the XP bar looks and what it shows (the Character tab's Settings).</summary>
         [DataMember(Name = "xpBar")] public XpBarOptions XpBar;
@@ -575,7 +582,7 @@ namespace DaraletPlayer {
             QuestTrackerHidden = new List<uint>();
             SharedWindowMembers = new List<string> {
                 "carried", "map", "social", "quests", "character", "attributes", "spellbook", "options", "buffs", "debuffs",
-                "vitae", "link", "book",
+                "vitae", "link",
             };
             SharedWindowTabs = true;
             OneClickHeal = true;

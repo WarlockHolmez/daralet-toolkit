@@ -317,64 +317,12 @@ namespace DaraletPlayer.Ui {
         }
 
         /// <summary>
-        /// The window's settings, for its tab's Settings, under a <see cref="Form.Section"/> named for it: Enabled, Only when
-        /// needed, Locked and Reset position in a row, then its size and background in a form. A window its tab opens and
-        /// closes itself has no Enabled (showToggle false).
+        /// The window's settings, for its tab's Settings, under a <see cref="Form.Section"/> named for it: one row,
+        /// as RenderCompactControls (the user's call, November 2026; it was a row of checkboxes, then Size and Background
+        /// in a form of their own). A window its tab opens and closes itself has no Enabled (showToggle false).
         /// </summary>
         public void RenderControls(string tip, bool showToggle = true) {
-            var first = true;
-
-            if (showToggle) {
-                var visible = Visible;
-
-                if (Form.FlowCheck(ref first, $"Enabled##{id}-visible", ref visible, tip)) {
-                    Visible = visible;
-                }
-            }
-
-            if (inUse != null && !alwaysOnlyInUse) {
-                var onlyInUse = Placement.OnlyInUse;
-
-                if (Form.FlowCheck(ref first, $"Only when needed##{id}-in-use", ref onlyInUse,
-                    "Shows the window only while it has something to show, and hides it the rest of the time, instead of "
-                    + "leaving it on screen saying there's nothing.")) {
-                    Placement.OnlyInUse = onlyInUse;
-                    settings.Changed();
-                }
-            }
-
-            var locked = Locked;
-
-            if (Form.FlowCheck(ref first, $"Locked##{id}-locked", ref locked, "Unlocked, a window is moved by dragging its "
-                + "top edge (the mouse shows the four arrows there) and sized by its other edges. Locked, it stays put. "
-                + "Either way, hold Ctrl and drag it from anywhere on it to move it. You can also right-click the window "
-                + "to lock or unlock it.")) {
-                Locked = locked;
-            }
-
-            if (Form.FlowButton(ref first, $"Reset position##{id}-reset",
-                "Moves the window back to where it starts out, in case it's off screen.")) {
-                ResetPosition();
-            }
-
-            if (!Form.BeginForm($"{id}-window-form")) {
-                return;
-            }
-
-            Form.Label("Size", "How big the window's text and bars are drawn.");
-
-            // leaving room for its Reset button in a narrow column
-            var style = ImGui.GetStyle();
-            var reset = ImGui.CalcTextSize("Reset").X + style.FramePadding.X * 2 + style.ItemSpacing.X;
-            var room = ImGui.GetContentRegionAvail().X - reset;
-            ImGui.SetNextItemWidth(Math.Max(ImGui.GetFontSize() * 4, Math.Min(Form.ControlWidth, room)));
-            ScaleSlider($"##{id}-scale");
-
-            Form.Label("Background", "How solid the window's background is.");
-            ImGui.SetNextItemWidth(Form.ControlWidth);
-            BackgroundSlider($"##{id}-background");
-
-            ImGui.EndTable();
+            RenderCompactControls(tip, showToggle);
         }
 
         public void ScaleSlider(string label) {

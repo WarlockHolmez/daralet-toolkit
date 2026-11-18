@@ -146,6 +146,20 @@ namespace DaraletPlayer.Ui {
             return clicked;
         }
 
+        /// <summary>
+        /// A short slider in a row of controls that wraps to the width, its name best put in its format ("Size %d%%"),
+        /// since it has no label. True when it changed.
+        /// </summary>
+        public static bool FlowSlider(ref bool first, string id, ref int value, int min, int max, string format,
+            string tip) {
+            var width = (float)Math.Round(ImGui.GetFontSize() * 8);
+            Flow(ref first, width);
+            ImGui.SetNextItemWidth(width);
+            var changed = Sliders.SliderInt(id, ref value, min, max, format);
+            Widgets.Tip(tip);
+            return changed;
+        }
+
         /// <summary>A slider as wide as a form's controls. True when it changed.</summary>
         public static bool Slider(string id, ref int value, int min, int max, string format) {
             ImGui.SetNextItemWidth(ControlWidth);

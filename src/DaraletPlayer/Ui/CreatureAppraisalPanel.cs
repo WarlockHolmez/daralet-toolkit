@@ -59,7 +59,7 @@ namespace DaraletPlayer.Ui {
         protected override string ReplaceTip => "Shows appraisals of creatures, NPCs, players and anything else in the "
             + "world (lifestones, portals, doors) in the plugin's Creature Appraisal window instead of the game's "
             + "examination panel, from the appraise key, the magnifier, a right-click or anywhere the game appraises. Items "
-            + "go to the plugin's Appraisal window while Plugin appraisal is on, else to the game's panel.";
+            + "go to the plugin's Appraisal window while Item Appraisal is on, else to the game's panel.";
 
         protected override string WindowTip => "A creature's or player's appraisal: level, health, stamina, mana and "
             + "attributes (green raised by a spell, red lowered), ratings, a player's armor, allegiance and character, and "
@@ -84,7 +84,7 @@ namespace DaraletPlayer.Ui {
                 // one on the ground or someone else's is only described by a server with "worlddescribe": on an older
                 // one the game's panel shows it
                 if (!Appraisal.InPlugin || (target.Container == 0 && !Appraisal.DescribesWorldItems)) {
-                    GameShows(id, Appraisal.InPlugin ? "lies on the ground" : "is an item, and Plugin appraisal is off");
+                    GameShows(id, Appraisal.InPlugin ? "lies on the ground" : "is an item, and Item Appraisal is off");
                     return false;
                 }
 

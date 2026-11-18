@@ -166,39 +166,34 @@ namespace DaraletPlayer.Ui {
             return true;
         }
 
-        /// <summary>The Config tab's Game window section.</summary>
-        public void Render() {
-            Form.Section("Game window");
+        /// <summary>
+        /// The Config tab's Game window row, in a form of the caller's: Borderless, and while it's on, buttons to move
+        /// the window, which has no title bar to drag.
+        /// </summary>
+        public void RenderRow() {
+            Form.Label("Game window", "The game's own window: its title bar and frame, and where it is on the screen.");
+            var first = true;
 
-            if (!Form.BeginForm("game-window")) {
-                return;
-            }
-
-            Form.Label("Border", "The title bar and frame round the game's window.");
-
-            if (Form.Check("Borderless window", ref settings.Data.BorderlessWindow, "Takes the title bar and border off the "
-                + "game's window, within a second. A window as big as your screen then fills it exactly: set the game's "
-                + "resolution to your screen's, in windowed mode, for borderless fullscreen. A game in true fullscreen has "
-                + "no border to take off. Without a title bar you can't drag the window: use the buttons below, or turn "
-                + "this off, drag it, and turn it on again.")) {
+            if (Form.FlowCheck(ref first, "Borderless##borderless", ref settings.Data.BorderlessWindow, "Takes the title "
+                + "bar and border off the game's window, within a second. A window as big as your screen then fills it "
+                + "exactly: set the game's resolution to your screen's, in windowed mode, for borderless fullscreen. A "
+                + "game in true fullscreen has no border to take off. Without a title bar you can't drag the window: use "
+                + "Centre or Top left beside this, or turn this off, drag it, and turn it on again.")) {
                 settings.Changed();
             }
 
-            if (settings.Data.BorderlessWindow) {
-                Form.Label("Move", "Moves the window on the screen it's on, keeping its size.");
-                var first = true;
-
-                if (Form.FlowSmallButton(ref first, "Centre##borderless-centre", "Centres the game's window on your screen.")) {
-                    Move(centre: true);
-                }
-
-                if (Form.FlowSmallButton(ref first, "Top left##borderless-corner",
-                    "Moves the game's window to the top left corner of your screen.")) {
-                    Move(centre: false);
-                }
+            if (!settings.Data.BorderlessWindow) {
+                return;
             }
 
-            ImGui.EndTable();
+            if (Form.FlowSmallButton(ref first, "Centre##borderless-centre", "Centres the game's window on your screen.")) {
+                Move(centre: true);
+            }
+
+            if (Form.FlowSmallButton(ref first, "Top left##borderless-corner",
+                "Moves the game's window to the top left corner of your screen.")) {
+                Move(centre: false);
+            }
         }
 
         public void Dispose() {

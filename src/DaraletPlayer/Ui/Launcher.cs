@@ -85,24 +85,24 @@ namespace DaraletPlayer.Ui {
             keyWasDown = down;
         }
 
-        /// <summary>The Config tab's Toolkit button section: the button's window, and the key.</summary>
-        public void Render() {
-            Form.Section("Toolkit button and key");
-            Form.Hint("Open and close this window with a button you can put anywhere on screen and make any size, or with "
-                + "a key, as well as from UtilityBelt's bar or /dap.");
+        /// <summary>
+        /// The Config tab's Toolkit button row, in a form of the caller's: the button's window, its size and background.
+        /// Once a section of its own with the key; the key is now with the others (RenderKeyRow).
+        /// </summary>
+        public void RenderWindowRow() {
+            Form.Label("Toolkit button", "A button you can put anywhere on screen and make any size, that opens and "
+                + "closes this window, as UtilityBelt's bar and /dap do.");
+            window.RenderCompactControls("A button in a window of its own that opens and closes this window, like "
+                + "UtilityBelt's bar button. Unlock it to drag it anywhere; Size makes it bigger or smaller.");
+        }
 
-            window.RenderControls("A button in a window of its own that opens and closes this window, like UtilityBelt's "
-                + "bar button. Unlock it to drag it anywhere; Size makes it bigger or smaller.");
-
-            if (!Form.BeginForm("launcher-key")) {
-                return;
-            }
-
-            Form.Label("Key", "Opens and closes this window. Click, then press the key (with Ctrl, Shift or Alt if you "
+        /// <summary>The Config tab's Toolkit key row, in a form of the caller's.</summary>
+        public void RenderKeyRow() {
+            Form.Label("Toolkit key", "Opens and closes this window, as UtilityBelt's bar and /dap do.");
+            RenderKey();
+            Widgets.Tip("Opens and closes this window. Click, then press the key (with Ctrl, Shift or Alt if you "
                 + "like); Escape cancels, right-click clears it. The game hears it too, and ignores Ctrl and Shift on its "
                 + "own keys, so pick a key it doesn't use at all.");
-            RenderKey();
-            ImGui.EndTable();
         }
 
         private void RenderKey() {

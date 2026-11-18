@@ -167,27 +167,37 @@ namespace DaraletPlayer.Ui {
                 settings.Changed();
             }
 
+            // the layout's own numbers beside it, as short sliders (the user's call, November 2026: a row each before)
+            var first = false;
+
             switch (layout) {
                 case FellowshipOrder.Pages:
-                    Form.Label("Page size", "Members on each page. A page with someone below half health has a red tab.");
-                    SliderSetting("##fellowship-page-size", ref data.FellowshipPageSize, 2, 20, "%d");
+                    FlowSlider(ref first, "##fellowship-page-size", ref data.FellowshipPageSize, 2, 20, "%d a page",
+                        "Members on each page. A page with someone below half health has a red tab.");
                     break;
                 case FellowshipOrder.Grid:
-                    Form.Label("Columns", "Tiles to a row.");
-                    SliderSetting("##fellowship-columns", ref data.FellowshipGridColumns, 1, 10, "%d");
-                    Form.Label("Tile width", "Each tile's width; the window's Size makes them bigger too.");
-                    SliderSetting("##fellowship-tile-width", ref data.FellowshipTileWidth, 40, 200, "%d px");
+                    FlowSlider(ref first, "##fellowship-columns", ref data.FellowshipGridColumns, 1, 10, "%d to a row",
+                        "Tiles to a row.");
+                    FlowSlider(ref first, "##fellowship-tile-width", ref data.FellowshipTileWidth, 40, 200, "%d px tiles",
+                        "Each tile's width; the window's Size makes them bigger too.");
                     break;
                 default:
-                    Form.Label("Scroll after", "Past this many members the window stops growing and scrolls.");
-                    SliderSetting("##fellowship-scroll-after", ref data.FellowshipScrollAfter, 3, 30, "%d");
+                    FlowSlider(ref first, "##fellowship-scroll-after", ref data.FellowshipScrollAfter, 3, 30,
+                        "Scroll after %d", "Past this many members the window stops growing and scrolls.");
                     break;
             }
 
-            Form.Label("Show up to", "The most members the window shows, pinned ones first (right-click a member to pin "
-                + "them). All shows everyone.");
-            SliderSetting("##fellowship-show-up-to", ref data.FellowshipShowUpTo, 0, 40,
-                data.FellowshipShowUpTo == 0 ? "All" : "%d");
+            Form.Label("Show", "How many members the window shows, and whether those too far away to say are left out.");
+            first = true;
+            FlowSlider(ref first, "##fellowship-show-up-to", ref data.FellowshipShowUpTo, 0, 40,
+                data.FellowshipShowUpTo == 0 ? "All" : "Up to %d", "The most members the window shows, pinned ones first "
+                + "(right-click a member to pin them). All shows everyone.");
+
+            if (Form.FlowCheck(ref first, "Hide far away##fellowship", ref data.FellowshipHideFar, "Leaves out members too "
+                + "far away for the server to say how far (not in your landblock or the ones round it). Pinned ones "
+                + "too.")) {
+                settings.Changed();
+            }
 
             Form.Label("Sort", "The order after pinned members: the fellowship's own (leader first), by name, lowest "
                 + "health first, or nearest first.");
@@ -201,16 +211,12 @@ namespace DaraletPlayer.Ui {
                 settings.Changed();
             }
 
-            Form.Label("Far away", "Members too far away for the server to say how far.");
-
-            if (Form.Check("Hide far away##fellowship", ref data.FellowshipHideFar, "Leaves out members too far away for "
-                + "the server to say how far (not in your landblock or the ones round it). Pinned ones too.")) {
-                settings.Changed();
-            }
-
-            Form.Label("Spells up to", "Buffs and debuffs by each name are only asked for in a fellowship of up to this "
-                + "many: each member's spells are a lot for the server to send every second.");
-            SliderSetting("##fellowship-spells-up-to", ref data.FellowshipSpellsUpTo, 1, 40, "%d");
+            Form.Label("Spells", "Buffs and debuffs by each name are only asked for in a fellowship of up to this many: "
+                + "each member's spells are a lot for the server to send every second.");
+            first = true;
+            FlowSlider(ref first, "##fellowship-spells-up-to", ref data.FellowshipSpellsUpTo, 1, 40, "Up to %d",
+                "Buffs and debuffs by each name are only asked for in a fellowship of up to this many members. Ctrl+click "
+                + "to type a number.");
 
             ImGui.EndTable();
 
@@ -226,8 +232,8 @@ namespace DaraletPlayer.Ui {
             }
         }
 
-        private void SliderSetting(string id, ref int value, int min, int max, string format) {
-            if (Form.Slider(id, ref value, min, max, format)) {
+        private void FlowSlider(ref bool first, string id, ref int value, int min, int max, string format, string tip) {
+            if (Form.FlowSlider(ref first, id, ref value, min, max, format, tip)) {
                 settings.Changed();
             }
         }

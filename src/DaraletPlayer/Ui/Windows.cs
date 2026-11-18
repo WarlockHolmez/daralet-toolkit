@@ -19,7 +19,8 @@ namespace DaraletPlayer.Ui {
         public static string ConfirmAllOn() {
             return "This turns on every override. The game's own bank window, and its window for corpses and chests, won't "
                 + "open any more: the server leaves them out, and this plugin's Bank and Corpse windows open instead. The "
-                + "four toolbar buttons open the plugin's windows too.\n\n" + WhileLoggedIn;
+                + "Toolbar and Indicator Bar windows' buttons open the plugin's Inventory, Quests, Social, Map and Character Stats "
+                + "windows too.\n\n" + WhileLoggedIn;
         }
 
         public static string NoticeOff(string what) {
@@ -32,7 +33,8 @@ namespace DaraletPlayer.Ui {
         /// <summary>For Disable all in Client UI Override, when Bank window or Loot window was on.</summary>
         public static string NoticeAllOff() {
             return "The game's own bank, corpse and chest windows open again from the next one you open; one open now stays "
-                + "in this plugin's window until it's closed. The toolbar buttons are the game's again.\n\n"
+                + "in this plugin's window until it's closed. The Toolbar and Indicator Bar windows' buttons open the game's "
+                + "panels again.\n\n"
                 + "If the game's windows still don't come back (the server didn't hear, say), log out and back in: the "
                 + "server forgets this at logout.";
         }

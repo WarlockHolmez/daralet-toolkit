@@ -3,7 +3,7 @@ using System.Linq;
 
 namespace DaraletPlayer.Feed {
     /// <summary>
-    /// How a loot rule marks the items it decides, wherever they're listed (the Corpse window, the Loot tab's test, and the
+    /// How a loot rule marks the items it decides, wherever they're listed (the Corpse window and the
     /// Inventory tab with Loot highlights on): a coloured frame round the icon (LootRule.Highlight) and a symbol in its top
     /// left corner (LootRule.Icon), drawn in its own colour (LootRule.IconColor), else the frame's, else gold.
     /// </summary>

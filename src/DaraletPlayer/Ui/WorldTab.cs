@@ -18,6 +18,12 @@ namespace DaraletPlayer.Ui {
         private static readonly TimeSpan FellowshipRefresh = TimeSpan.FromSeconds(1);
         private const int SearchResults = 12;
 
+        private const string MapWindowTip = "The map in a window of its own, to keep on screen alongside the rest of the "
+            + "plugin. Drag its corner to size it. What it shows is set by Show..., here or on the window itself.";
+
+        private const string ArrowWindowTip = "A small window with an arrow pointing to your destination from the way "
+            + "you're facing, and how far it is.";
+
         private readonly PlayerFeed feed;
         private readonly Settings settings;
         private readonly SelfPosition self;
@@ -437,35 +443,6 @@ namespace DaraletPlayer.Ui {
             ImGui.EndPopup();
         }
 
-        private void RenderWorldDataStatus() {
-            Form.Section("Map data");
-
-            if (!Form.BeginForm("map-data")) {
-                return;
-            }
-
-            Form.Label("Places", "Where the places on the map come from.");
-            ImGui.PushStyleColor(ImGuiCol.Text, ImGui.GetStyle().Colors[(int)ImGuiCol.TextDisabled]);
-            Widgets.TextWrapped($"{locations.Count}, from {locationsSource}");
-            ImGui.PopStyleColor();
-
-            Form.Label("Updates", "The map and places update without a new plugin.");
-            ImGui.PushStyleColor(ImGuiCol.Text, ImGui.GetStyle().Colors[(int)ImGuiCol.TextDisabled]);
-            Widgets.TextWrapped(worldData.Status);
-            ImGui.PopStyleColor();
-
-            ImGui.BeginDisabled(worldData.Busy);
-            if (ImGui.Button("Check for map updates")) {
-                worldData.Start();
-            }
-            ImGui.EndDisabled();
-            Widgets.Tip($"Downloads the newest map and places (locations.xml) if they've changed. This happens by itself "
-                + $"each time the plugin starts. They're kept in {worldData.Folder}. A dereth-map.png or locations.xml next "
-                + "to DaraletToolkit.dll is still used instead.");
-
-            ImGui.EndTable();
-        }
-
         private void RenderDestinationLine() {
             var destination = CurrentDestination();
 
@@ -485,6 +462,10 @@ namespace DaraletPlayer.Ui {
 
         }
 
+        /// <summary>
+        /// The map's names, its windows and its data, a row each, then the radar's section (the user's call, November
+        /// 2026): six sections side by side before, each window's controls five lines.
+        /// </summary>
         private void RenderSettings() {
             if (!Form.SettingsHeader("world-settings", "The names' size, the map window, the arrow window, the dungeon "
                 + "window and the radar, and checking for new map data.")) {
@@ -492,43 +473,39 @@ namespace DaraletPlayer.Ui {
             }
 
             using var fold = Form.Folded();
+            Form.Section("Map and its windows");
 
-            Form.Columns("world-settings-grid", RenderMapSettings, RenderWorldDataStatus, RenderMapWindowSettings,
-                RenderArrowSettings, RenderDungeonWindowSettings, () => RadarSettings?.Invoke());
+            if (Form.BeginForm("world-settings-rows")) {
+                RenderMapRow();
+                Form.Label("Map", MapWindowTip);
+                mapWindow.RenderCompactControls(MapWindowTip);
+                RenderArrowRow();
+                dungeonWindow.RenderRow();
+                RenderWorldDataRow();
+                ImGui.EndTable();
+            }
+
+            RadarSettings?.Invoke();
             ImGui.Spacing();
         }
 
-        private void RenderMapSettings() {
-            Form.Section("Map");
-
-            if (!Form.BeginForm("map-form")) {
-                return;
-            }
-
-            Form.Label("Text size", "How big the names on the map are drawn: towns, places and your fellows, here and in "
-                + "the map window.");
+        private void RenderMapRow() {
+            Form.Label("Names", "How big the names on the map are drawn: towns, places and your fellows, here and in the "
+                + "map window.");
+            var first = true;
             var textPercent = (int)Math.Round(settings.Data.MapTextScale * 100);
 
-            if (Form.Slider("##map-text", ref textPercent, 50, 250, "%d%%")) {
+            if (Form.FlowSlider(ref first, "##map-text", ref textPercent, 50, 250, "%d%% size", "How big the names on "
+                + "the map are drawn. Ctrl+click to type a size.")) {
                 settings.Data.MapTextScale = textPercent / 100f;
                 settings.Changed();
             }
-
-            ImGui.EndTable();
         }
 
-        private void RenderMapWindowSettings() {
-            Form.Section("Map window");
-            mapWindow.RenderControls("The map in a window of its own, to keep on screen alongside the rest of the plugin. "
-                + "Drag its corner to size it. What it shows is set by Show..., here or on the window itself.");
-        }
-
-        private void RenderArrowSettings() {
-            Form.Section("Arrow window");
-            arrowWindow.RenderControls("A small window with an arrow pointing to your destination from the way you're "
-                + "facing, and how far it is.");
-
-            var first = true;
+        private void RenderArrowRow() {
+            Form.Label("Arrow", ArrowWindowTip);
+            arrowWindow.RenderCompactControls(ArrowWindowTip);
+            var first = false;
 
             if (Form.FlowCheck(ref first, "Details##arrow-details", ref settings.Data.ArrowShowDetails,
                 "Shows the destination's name, distance and direction beside the arrow. Untick for the arrow alone; with "
@@ -537,11 +514,23 @@ namespace DaraletPlayer.Ui {
             }
         }
 
-        private void RenderDungeonWindowSettings() {
-            Form.Section("Dungeon window");
-            dungeonWindow.RenderControls();
-        }
+        /// <summary>Where the places come from, whether the map and places are up to date, and checking again.</summary>
+        private void RenderWorldDataRow() {
+            Form.Label("Map data", "Where the places on the map come from. The map and places update without a new "
+                + "plugin.");
+            ImGui.PushStyleColor(ImGuiCol.Text, ImGui.GetStyle().Colors[(int)ImGuiCol.TextDisabled]);
+            Widgets.TextWrapped($"{locations.Count} places, from {locationsSource}. {worldData.Status}");
+            ImGui.PopStyleColor();
 
+            ImGui.BeginDisabled(worldData.Busy);
+            if (ImGui.SmallButton("Check for map updates")) {
+                worldData.Start();
+            }
+            ImGui.EndDisabled();
+            Widgets.Tip($"Downloads the newest map and places (locations.xml) if they've changed. This happens by itself "
+                + $"each time the plugin starts. They're kept in {worldData.Folder}. A dereth-map.png or locations.xml next "
+                + "to DaraletToolkit.dll is still used instead.");
+        }
         private void RenderSearchResults() {
             if (search.Trim().Length == 0) {
                 return;

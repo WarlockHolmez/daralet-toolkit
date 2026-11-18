@@ -17,6 +17,7 @@ namespace DaraletPlayer.Ui {
 
         private readonly Settings settings;
         private readonly ClientUiOverride clientUiOverride;
+        private readonly ChatTab chatTab;
         private readonly HideGameUi hideGameUi;
         private readonly Launcher launcher;
         private readonly BorderlessWindow borderless;
@@ -38,10 +39,11 @@ namespace DaraletPlayer.Ui {
         /// <summary>The files From file found when it was pressed.</summary>
         private List<string> exportFiles = new List<string>();
 
-        public ConfigTab(Settings settings, ClientUiOverride clientUiOverride, HideGameUi hideGameUi, Launcher launcher,
-            BorderlessWindow borderless) {
+        public ConfigTab(Settings settings, ClientUiOverride clientUiOverride, ChatTab chatTab, HideGameUi hideGameUi,
+            Launcher launcher, BorderlessWindow borderless) {
             this.settings = settings;
             this.clientUiOverride = clientUiOverride;
+            this.chatTab = chatTab;
             this.hideGameUi = hideGameUi;
             this.launcher = launcher;
             this.borderless = borderless;
@@ -50,10 +52,42 @@ namespace DaraletPlayer.Ui {
         private static string Me => CoreManager.Current.CharacterFilter.Name;
 
         public void Render() {
-            Form.Section("Settings profile");
-            Form.Hint("Everything the plugin keeps is in the profile in use: its windows and where they are, every tab's "
-                + "options, your loot profiles and your hotbars. Each character picks its own profile, and one that "
-                + "hasn't uses Default, so a few characters can share a set up and the rest keep theirs.");
+            if (!ImGui.BeginTabBar("config-tabs")) {
+                return;
+            }
+
+            if (Widgets.TabItem("General", "Settings profiles, the text size, the theme, Escape, window snapping, the game "
+                + "window's border, Hide game UI and the Toolkit button.")) {
+                RenderGeneral();
+                ImGui.EndTabItem();
+            }
+
+            // a sub tab of its own: its dozens of checkboxes made the rest of the tab hard to find
+            if (Widgets.TabItem("Client UI Override", "The plugin's windows in place of the game's own: its toolbar "
+                + "buttons, its bank, corpse and vendor windows, and its panels, and the windows that share one place.")) {
+                clientUiOverride.Render();
+                ImGui.EndTabItem();
+            }
+
+            // the chat windows' settings, once a main tab of their own (the user's call, November 2026): settings, beside
+            // Client UI Override's Chat
+            if (Widgets.TabItem("Chat", "Chat windows of the plugin's own: a main window with tabs, others popped out, "
+                + "each showing what you pick of the game's chat, with sharp text at any size, items linked in chat, "
+                + "copying, and Hide game chat to use them instead of the game's.")) {
+                chatTab.Render();
+                ImGui.EndTabItem();
+            }
+
+            ImGui.EndTabBar();
+        }
+
+        /// <summary>
+        /// The General sub tab, in five sections (the user's call, November 2026): Profile, Look, Keys and mouse, Window
+        /// snapping, and Game window and Toolkit button. It was nine, three opening with a paragraph, which are now the
+        /// tooltips of the rows they explained.
+        /// </summary>
+        private void RenderGeneral() {
+            Form.Section("Profile");
 
             if (Form.BeginForm("config-profile")) {
                 Form.Label("Profile", ProfileTip);
@@ -81,17 +115,16 @@ namespace DaraletPlayer.Ui {
                 Widgets.TextColored(Colors.Good, message);
             }
 
-            ImGui.Spacing();
-            RenderText();
-            RenderTheme();
-            RenderEscape();
+            RenderLook();
+            RenderKeys();
             RenderSnapping();
+            Form.Section("Game window and Toolkit button");
 
-            ImGui.Spacing();
-            clientUiOverride.Render();
-            borderless.Render();
-            hideGameUi.Render();
-            launcher.Render();
+            if (Form.BeginForm("config-game-window")) {
+                borderless.RenderRow();
+                launcher.RenderWindowRow();
+                ImGui.EndTable();
+            }
         }
 
         /// <summary>
@@ -145,13 +178,15 @@ namespace DaraletPlayer.Ui {
                 + "next key you press; Escape cancels.");
         }
 
-        private void RenderText() {
-            Form.Section("Text");
+        /// <summary>Look: the theme and the text size.</summary>
+        private void RenderLook() {
+            Form.Section("Look");
 
-            if (!Form.BeginForm("config-text")) {
+            if (!Form.BeginForm("config-look")) {
                 return;
             }
 
+            RenderThemeRow();
             Form.Label("Text size", "How big the plugin's text is drawn, in this window and every other one of its "
                 + "windows. A window's own Size (its Settings, or right-click it) goes on top of this.");
 
@@ -180,6 +215,16 @@ namespace DaraletPlayer.Ui {
                 SetTextScale(1);
             }
             Widgets.Tip("Puts the text size back to 100%.");
+            ImGui.EndTable();
+        }
+
+        /// <summary>Keys and mouse: tooltips, right-click, Escape, and the Toolkit and Hide UI keys.</summary>
+        private void RenderKeys() {
+            Form.Section("Keys and mouse");
+
+            if (!Form.BeginForm("config-keys")) {
+                return;
+            }
 
             Form.Label("Tooltips", "When the boxes that show as you hover over something appear.");
 
@@ -192,17 +237,14 @@ namespace DaraletPlayer.Ui {
             ImGui.SameLine();
             RenderTooltipKey();
             RenderRightClick();
-
+            RenderEscapeRow();
+            launcher.RenderKeyRow();
+            hideGameUi.RenderKeyRow();
             ImGui.EndTable();
         }
 
-        private void RenderTheme() {
-            Form.Section("Theme");
-
-            if (!Form.BeginForm("config-theme")) {
-                return;
-            }
-
+        /// <summary>The theme's row, in Look's form.</summary>
+        private void RenderThemeRow() {
             Form.Label("Theme", "A ready-made look for this window and every other one of the plugin's windows: their "
                 + "background, buttons, tabs and corners. Other plugins' windows keep their own.");
 
@@ -225,8 +267,6 @@ namespace DaraletPlayer.Ui {
                 Combos.End();
             }
             Widgets.Tip($"{current.Tip} Pick another to see it at once.");
-
-            ImGui.EndTable();
         }
 
         /// <summary>
@@ -266,29 +306,25 @@ namespace DaraletPlayer.Ui {
             }
         }
 
-        private void RenderEscape() {
-            Form.Section("Escape key");
+        /// <summary>Escape's row, in Keys and mouse's form.</summary>
+        private void RenderEscapeRow() {
+            Form.Label("Escape", "What Escape does to this plugin's windows.");
 
-            if (!Form.BeginForm("config-escape")) {
-                return;
-            }
-
-            Form.Label("Windows", "What Escape does to this plugin's windows.");
-
-            if (Form.Check("Escape closes windows", ref settings.Data.EscapeClosesWindows, "Escape closes this window and "
-                + "the Inventory, Bank, Character and Quests windows (closing the Bank window closes the bank). The Target, "
-                + "Fellowship, Loot, hotbar, map and other windows that follow what you're doing stay. Escape does only its "
-                + "other job while you're typing in chat or a text box, have a menu open, are using a tool on something or "
-                + "are setting a key. With none of them open and Options replacing the game's panel, Escape opens the "
-                + "Options window at Gameplay Options, and pressed again there asks to exit the game. The game hears "
-                + "Escape too.")) {
+            if (Form.Check("Closes windows##config-escape", ref settings.Data.EscapeClosesWindows, "Escape closes this "
+                + "window and the Inventory, Bank, Character Stats and Quests windows (closing the Bank window closes the "
+                + "bank). The Target, Fellowship, Loot, hotbar, map and other windows that follow what you're doing stay. "
+                + "Escape does only its other job while you're typing in chat or a text box, have a menu open, are using "
+                + "a tool on something or are setting a key. With none of them open and Options replacing the game's "
+                + "panel, Escape opens the Options window at Gameplay Options, and pressed again there asks to exit the "
+                + "game. The game hears Escape too.")) {
                 settings.Changed();
             }
-
-            ImGui.EndTable();
         }
 
-        /// <summary>Window snapping (WindowSnap, FloatingWindow.SnapWhileDragged): edges, the grid and its drawing.</summary>
+        /// <summary>
+        /// Window snapping (WindowSnap, FloatingWindow.SnapWhileDragged), in two rows: snapping to edges when moving and
+        /// resizing, with the distance, and the same for the grid, with Show and its size.
+        /// </summary>
         private void RenderSnapping() {
             Form.Section("Window snapping");
 
@@ -297,49 +333,51 @@ namespace DaraletPlayer.Ui {
             }
 
             var data = settings.Data;
-            Form.Label("Snap", "How the plugin's windows line up as you drag them.");
+            Form.Label("Snap", "How the plugin's windows line up with the screen's edges and each other's as you move "
+                + "and resize them. Hold Shift to place or size one freely.");
+            var first = true;
 
-            if (Form.Check("Snap windows", ref data.SnapWindows, "A window you drag snaps to the screen's edges and to the "
-                + "edges of the plugin's other windows when one comes near, so they line up. Hold Shift while dragging "
-                + "to place one freely.")) {
+            if (Form.FlowCheck(ref first, "Moving##config-snap-move", ref data.SnapWindows, "A window you drag snaps to "
+                + "the screen's edges and to the edges of the plugin's other windows when one comes near, so they line "
+                + "up. Hold Shift while dragging to place one freely.")) {
                 settings.Changed();
             }
 
-            if (Form.Check("Snap when resizing", ref data.SnapResize, "The edge of a window you resize (one you size "
-                + "yourself) snaps the same way: to the screen's edges, the edges of the plugin's other windows beside it, "
-                + "and the grid. Hold Shift to size one freely.")) {
+            if (Form.FlowCheck(ref first, "Resizing##config-snap-resize", ref data.SnapResize, "The edge of a window you "
+                + "resize (one you size yourself) snaps the same way: to the screen's edges, the edges of the plugin's "
+                + "other windows beside it, and the grid. Hold Shift to size one freely.")) {
                 settings.Changed();
             }
 
-            Form.Label("Snap distance", "How near, in pixels, an edge has to come before the window snaps to it.");
-
-            if (Form.Slider("##config-snap-distance", ref data.SnapDistance, 2, 40, "%d px")) {
+            if (Form.FlowSlider(ref first, "##config-snap-distance", ref data.SnapDistance, 2, 40, "%d px", "How near, "
+                + "in pixels, an edge has to come before the window snaps to it. Ctrl+click to type a number.")) {
                 settings.Changed();
             }
 
             Form.Label("Grid", "A grid the windows snap to as well, where no edge is near.");
+            first = true;
 
-            if (Form.Check("Snap to a grid", ref data.SnapGrid, "With no edge near, a window you drag snaps its top left "
-                + "corner to the nearest point of a grid. Its middle snaps to the screen's middle, thirds and quarters "
-                + "too.")) {
+            if (Form.FlowCheck(ref first, "Moving##config-grid-move", ref data.SnapGrid, "With no edge near, a window you "
+                + "drag snaps its top left corner to the nearest point of a grid. Its middle snaps to the screen's middle, "
+                + "thirds and quarters too.")) {
                 settings.Changed();
             }
 
-            if (Form.Check("Snap resizing to the grid", ref data.SnapResizeGrid, "With no edge near, the edge of a "
-                + "window you resize, by its edge or by a bar's grip (the XP bar, Vitals, Power bar, Spell bar), snaps to "
-                + "the grid's lines and to the screen's middle, thirds and quarters. Needs Snap when resizing.")) {
+            if (Form.FlowCheck(ref first, "Resizing##config-grid-resize", ref data.SnapResizeGrid, "With no edge near, "
+                + "the edge of a window you resize, by its edge or by a bar's grip (the XP bar, Vitals, Power bar, Spell "
+                + "bar), snaps to the grid's lines and to the screen's middle, thirds and quarters. Needs Snap's "
+                + "Resizing.")) {
                 settings.Changed();
             }
 
-            if (Form.Check("Show the grid", ref data.SnapGridShown, "Draws the grid faintly over the screen while a window "
-                + "is dragged, with thicker lines at the middle, thirds and quarters; the one a window is centred on "
-                + "lights up.")) {
+            if (Form.FlowCheck(ref first, "Show##config-grid-show", ref data.SnapGridShown, "Draws the grid faintly over "
+                + "the screen while a window is dragged, with thicker lines at the middle, thirds and quarters; the one a "
+                + "window is centred on lights up.")) {
                 settings.Changed();
             }
 
-            Form.Label("Grid size", "How far apart the grid's lines are, in pixels.");
-
-            if (Form.Slider("##config-snap-grid", ref data.SnapGridSize, 4, 100, "%d px")) {
+            if (Form.FlowSlider(ref first, "##config-snap-grid", ref data.SnapGridSize, 4, 100, "%d px", "How far apart "
+                + "the grid's lines are, in pixels. Ctrl+click to type a number.")) {
                 settings.Changed();
             }
 
@@ -356,7 +394,10 @@ namespace DaraletPlayer.Ui {
         }
 
         private string ProfileTip => $"The settings profile {Me} uses. Picking another swaps every setting at once, and "
-            + $"{Me} uses it from now on, at every login.";
+            + $"{Me} uses it from now on, at every login. Everything the plugin keeps is in the profile in use: its "
+            + "windows and where they are, every tab's options, your loot profiles and your hotbars. Each character "
+            + "picks its own profile, and one that hasn't uses Default, so a few characters can share a set up and the "
+            + "rest keep theirs.";
 
         private void RenderPicker() {
             ImGui.SetNextItemWidth(Form.ControlWidth);

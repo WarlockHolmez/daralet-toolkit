@@ -196,7 +196,7 @@ namespace DaraletPlayer.Ui {
         }
 
         /// <summary>
-        /// A line's colour: its channel's for a chat channel's line, else its chat type's, either as picked in the Chat tab or
+        /// A line's colour: its channel's for a chat channel's line, else its chat type's, either as picked in the Config tab's Chat or
         /// as it starts, near the game's own.
         /// </summary>
         public uint ColorOf(ChatLine line) {

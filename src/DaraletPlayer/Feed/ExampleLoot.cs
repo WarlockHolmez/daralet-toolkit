@@ -4,10 +4,10 @@ using System.Collections.Generic;
 namespace DaraletPlayer.Feed {
     /// <summary>
     /// The Example Loot Profile: a starting point to copy and change, in folders by kind of item, marked by how well each
-    /// rolled. It's Resources/example-loot-profile.json, a profile as the Loot tab's To file saves one, so changing it is
+    /// rolled. It's Resources/example-loot-profile.json, a profile as the Looter's To file saves one, so changing it is
     /// saving a profile and copying the file over. The colorless one (example-loot-profile-colorless.json) is the same
     /// rules marked white, 50% gray and black instead of gold, silver and bronze. New settings start with both after
-    /// "My loot"; the Loot tab's Example buttons add them again.
+    /// "My loot"; the Looter's Example buttons add them again.
     /// </summary>
     public static class ExampleLoot {
         public const string Name = "Example Loot Profile";

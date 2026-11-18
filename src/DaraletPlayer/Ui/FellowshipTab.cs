@@ -189,13 +189,29 @@ namespace DaraletPlayer.Ui {
             }
 
             using var fold = Form.Folded();
-
-            Form.Section("Fellowship window");
-            window.RenderControls("A small window with each member's health, stamina and mana that stays on screen while "
-                + "you play. Click a name in it to select that member.");
-
-            Form.Section("Vitals shown");
             var data = settings.Data;
+
+            // the focus and spells came with the server's social requests: an older one sends neither
+            if (!feed.Supports(PlayerFeed.KindSocial)) {
+                Form.Hint("This server is too old to send each member's Combat Focus, buffs or debuffs: those stay empty "
+                    + "until it's updated.");
+            }
+
+            // a row each for the window, its bars and what's by each name (the user's call, November 2026): they were a
+            // section each, the window's controls alone five lines
+            Form.Section("Fellowship window");
+
+            if (!Form.BeginForm("fellowship-window-rows")) {
+                return;
+            }
+
+            Form.Label("Window", "A small window with each member's health, stamina and mana that stays on screen while "
+                + "you play. Click a name in it to select that member.");
+            window.RenderCompactControls("A small window with each member's health, stamina and mana that stays on "
+                + "screen while you play. Click a name in it to select that member.");
+
+            Form.Label("Bars", "Each member's vital bars in the fellowship window. Right-click a member, here or in the "
+                + "window, to pick their bars for them alone.");
             var first = true;
 
             if (Form.FlowCheck(ref first, "Stamina##fellowship", ref data.FellowshipShowStamina,
@@ -221,29 +237,16 @@ namespace DaraletPlayer.Ui {
                 settings.Changed();
             }
 
-            if (Form.BeginForm("fellowship-bars")) {
-                Form.Label("Bar width", "How wide each vital bar is in the fellowship window, which grows or shrinks to fit. "
-                    + "Its Size makes everything bigger, bars included.");
-                var width = data.FellowshipBarWidth;
+            var width = data.FellowshipBarWidth;
 
-                if (Form.Slider("##fellowship-bar-width", ref width, MinBarWidth, MaxBarWidth, "%d px")) {
-                    data.FellowshipBarWidth = width;
-                    settings.Changed();
-                }
-
-                ImGui.EndTable();
+            if (Form.FlowSlider(ref first, "##fellowship-bar-width", ref width, MinBarWidth, MaxBarWidth, "%d px wide",
+                "How wide each vital bar is in the fellowship window, which grows or shrinks to fit. Its Size makes "
+                + "everything bigger, bars included. Ctrl+click to type a number.")) {
+                data.FellowshipBarWidth = width;
+                settings.Changed();
             }
 
-            Widgets.TextDisabled("Right-click a member, here or in the window, to pick their bars for them alone.");
-
-            Form.Section("By each name");
-
-            // the focus and spells came with the server's social requests: an older one sends neither
-            if (!feed.Supports(PlayerFeed.KindSocial)) {
-                Form.Hint("This server is too old to send each member's Combat Focus, buffs or debuffs: those stay empty "
-                    + "until it's updated.");
-            }
-
+            Form.Label("By each name", "What's shown on each member's name line.");
             first = true;
 
             if (Form.FlowCheck(ref first, "Level##fellowship", ref data.FellowshipShowLevel,
@@ -273,6 +276,7 @@ namespace DaraletPlayer.Ui {
                 settings.Changed();
             }
 
+            ImGui.EndTable();
             RenderLayoutSettings();
         }
 

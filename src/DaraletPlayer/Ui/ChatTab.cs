@@ -7,9 +7,11 @@ using ImGuiNET;
 
 namespace DaraletPlayer.Ui {
     /// <summary>
-    /// The Chat tab: the chat windows on or off, Hide game chat, their windows, their font, times, unread tabs and
-    /// highlights, colours and saved chat. Each window's own options (what it shows, who typing in it goes to, its text
-    /// size) are in the window itself (ChatView.Options.cs), as the game keeps them in each chat window's options box.
+    /// The Config tab's Chat sub tab (a main tab until November 2026): the chat windows on or off, Hide game chat, their
+    /// windows, their font, times, unread tabs and highlights, saved chat and colours. Each window's own options (what it
+    /// shows, who typing in it goes to, its text size) are in the window itself (ChatView.Options.cs), as the game keeps
+    /// them in each chat window's options box. Four sections, each window's controls a row and Colours folded (the
+    /// user's call, November 2026): it was seven, a section for each window, and a colour list of some thirty rows.
     /// </summary>
     internal sealed class ChatTab {
         private readonly ChatWindows chat;
@@ -42,7 +44,7 @@ namespace DaraletPlayer.Ui {
                     + "click the ... by the box you type in, for each one's options.\n\nThe game's chat comes back when "
                     + "this is unticked or the plugin is turned off.",
                 "The game's chat windows are back. The plugin's chat windows stay too, until you untick Chat windows in "
-                    + "the Chat tab.")) {
+                    + "the Config tab's Chat.")) {
                 // the windows have to be on to chat at all with the game's hidden
                 if (data.HideGameChat) {
                     data.On = true;
@@ -54,22 +56,20 @@ namespace DaraletPlayer.Ui {
 
         public void Render() {
             RenderWindows();
-            Form.Columns("chat-columns", RenderText, RenderUnread);
-            Form.Columns("chat-columns-2", RenderLinks, RenderSaving);
+            Form.Columns("chat-columns", RenderText, RenderHighlights);
             RenderColors();
         }
 
         private void RenderWindows() {
             Form.Section("Chat windows");
-            Form.Hint("Chat in windows of the plugin's own: a main window with a tab for each of four others (Tells, "
-                + "Group, Channels and Combat to start), each showing what you pick of the game's chat, as the game's chat "
-                + "windows do, and each able to pop out into a window of its own. Right-click a tab, or click the ... by "
-                + "the box you type in, for its options. Hover a line to copy it; hover an item someone linked to see it.");
-
             var first = true;
 
-            if (Form.FlowCheck(ref first, "Chat windows##chat-on", ref Data.On, "Shows the plugin's chat windows. They keep "
-                + "the last of chat from before they were turned on, too.")) {
+            if (Form.FlowCheck(ref first, "Chat windows##chat-on", ref Data.On, "Chat in windows of the plugin's own: a "
+                + "main window with a tab for each of four others (Tells, Group, Channels and Combat to start), each "
+                + "showing what you pick of the game's chat, as the game's chat windows do, and each able to pop out into "
+                + "a window of its own. Right-click a tab, or click the ... by the box you type in, for its options. "
+                + "Hover a line to copy it; hover an item someone linked to see it. They keep the last of chat from "
+                + "before they were turned on, too.")) {
                 settings.Changed();
             }
 
@@ -87,7 +87,11 @@ namespace DaraletPlayer.Ui {
             }
 
             ImGui.Spacing();
+            RenderWindowTable();
+            RenderWindowRows();
+        }
 
+        private void RenderWindowTable() {
             if (!ImGui.BeginTable("chat-windows", 4, Widgets.TableFlags)) {
                 return;
             }
@@ -139,17 +143,29 @@ namespace DaraletPlayer.Ui {
             }
 
             ImGui.EndTable();
+        }
+
+        /// <summary>A row each for the main window and any popped out: its window's controls, once a section each.</summary>
+        private void RenderWindowRows() {
+            if (!Form.BeginForm("chat-window-rows")) {
+                return;
+            }
 
             for (var i = 0; i < ChatSettings.WindowCount; i++) {
                 if (i > 0 && !Data.Window(i).PoppedOut) {
                     continue;
                 }
 
-                Form.Section(i == 0 ? "Main chat window" : $"{Data.Window(i).Name} window");
-                chat.Window(i).RenderControls(i == 0
+                var main = i == 0;
+                Form.Label(main ? "Main window" : Data.Window(i).Name, main
+                    ? "The main chat window, which has the others as tabs until they pop out."
+                    : "This chat window, popped out of the main one.");
+                chat.Window(i).RenderCompactControls(main
                     ? "Shows the main chat window. Closed with Hide game chat on, Enter brings it back."
                     : "Shows this chat window, popped out of the main one.");
             }
+
+            ImGui.EndTable();
         }
 
         private void RenderText() {
@@ -163,47 +179,60 @@ namespace DaraletPlayer.Ui {
                 + "any: Verdana and Tahoma were made for small text on screens. A new font or size takes a moment to make.");
             RenderFontPicker();
 
-            Form.Label("Shadow", "A dark copy of the text a pixel down and right, so it reads over the game.");
+            Form.Label("Style", "How each line is drawn.");
+            var first = true;
 
-            if (Form.Check("Text shadow##chat-shadow", ref Data.TextShadow, "Good with a see-through background (a "
-                + "window's Background slider, or its right-click menu).")) {
+            if (Form.FlowCheck(ref first, "Shadow##chat-shadow", ref Data.TextShadow, "A dark copy of the text a pixel "
+                + "down and right, so it reads over the game. Good with a see-through background (a window's Background "
+                + "slider, or its right-click menu).")) {
                 settings.Changed();
             }
 
-            Form.Label("Line spacing", "Pixels between rows of text.");
-
-            if (Form.Slider("##chat-spacing", ref Data.LineSpacing, 0, 12, "%d px")) {
+            if (Form.FlowCheck(ref first, "Indent wrapped lines##chat-indent", ref Data.IndentWrapped, "Rows a long line "
+                + "wraps onto start in a little (past its time, with times on), so where each line starts is easy to "
+                + "see.")) {
                 settings.Changed();
             }
 
-            Form.Label("Times", "Each line's time, in front of it.");
-
-            if (Form.Check("##chat-times", ref Data.Timestamps, "Shows each line's time in front of it.")) {
+            if (Form.FlowCheck(ref first, "Times##chat-times", ref Data.Timestamps, "Shows each line's time in front of "
+                + "it, written as the box beside this says.")) {
                 settings.Changed();
             }
 
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(ImGui.GetFontSize() * 7);
             var formats = new[] {
                 ("HH:mm", "14:05"), ("HH:mm:ss", "14:05:09"), ("h:mm tt", "2:05 PM"), ("h:mm:ss tt", "2:05:09 PM"),
             };
+            var formatWidth = ImGui.GetFontSize() * 7;
+            Form.Flow(ref first, formatWidth);
+            ImGui.SetNextItemWidth(formatWidth);
 
             if (Widgets.Choice("##chat-time-format", formats, ref Data.TimeFormat)) {
                 settings.Changed();
             }
             Widgets.Tip("How the times are written.");
 
-            Form.Label("Wrapped lines", "How a line too long for the window goes on.");
+            Form.Label("Spacing", "Pixels between rows of text, and how many lines of chat are kept, every window "
+                + "together (the oldest go first).");
+            first = true;
 
-            if (Form.Check("Indent##chat-indent", ref Data.IndentWrapped, "Rows a long line wraps onto start in a little "
-                + "(past its time, with times on), so where each line starts is easy to see.")) {
+            if (Form.FlowSlider(ref first, "##chat-spacing", ref Data.LineSpacing, 0, 12, "%d px apart",
+                "Pixels between rows of text. Ctrl+click to type a number.")) {
                 settings.Changed();
             }
 
-            Form.Label("Lines kept", "How many lines of chat are kept, every window together. The oldest go first.");
+            RenderLinesKept(ref first);
+            ImGui.EndTable();
+        }
+
+        /// <summary>Lines kept, a short slider applied once let go: changing it while dragging would drop lines.</summary>
+        private void RenderLinesKept(ref bool first) {
             var kept = draggingHistory ?? Data.ClampedHistory;
-            ImGui.SetNextItemWidth(Form.ControlWidth);
+            var width = (float)Math.Round(ImGui.GetFontSize() * 8);
+            Form.Flow(ref first, width);
+            ImGui.SetNextItemWidth(width);
             Sliders.SliderInt("##chat-history", ref kept, ChatSettings.MinHistory, ChatSettings.MaxHistory, "%d lines");
+            Widgets.Tip("How many lines of chat are kept, every window together. The oldest go first. Used once let go; "
+                + "Ctrl+click to type a number.");
 
             if (ImGui.IsItemActive()) {
                 draggingHistory = kept;
@@ -213,8 +242,6 @@ namespace DaraletPlayer.Ui {
                 draggingHistory = null;
                 settings.Changed();
             }
-
-            ImGui.EndTable();
         }
 
         /// <summary>A combo of the fonts Windows and UtilityBelt have, with a box to find one by name.</summary>
@@ -249,10 +276,11 @@ namespace DaraletPlayer.Ui {
             Combos.End();
         }
 
-        private void RenderUnread() {
-            Form.Section("Unread and highlights");
+        /// <summary>Unread tabs, highlights, clicking names and saved chat: once three sections.</summary>
+        private void RenderHighlights() {
+            Form.Section("Highlights and links");
 
-            if (!Form.BeginForm("chat-unread")) {
+            if (!Form.BeginForm("chat-highlights")) {
                 return;
             }
 
@@ -263,43 +291,11 @@ namespace DaraletPlayer.Ui {
                 settings.Changed();
             }
 
-            Form.Label("Your name", "Lines that mention your character light up.");
+            RenderHighlightRow();
 
-            if (Form.Check("Highlight##chat-highlight-name", ref Data.HighlightName, "Lights up lines with your character's "
-                + "name in them (not your own tells).")) {
-                settings.Changed();
-            }
-
-            Form.Label("Words", "More words that light a line up, comma-separated: whole words, case ignored.");
-            ImGui.SetNextItemWidth(Form.ControlWidth);
-
-            if (ImGui.InputTextWithHint("##chat-highlights", "word, another", ref Data.Highlights, 300)) {
-                settings.Changed();
-            }
-            Widgets.Tip("A guild's name, an item you're after, a nickname. Lines from now on light up.");
-
-            Form.Label("Colour", "What a lit-up line's background is drawn in.");
-            var color = PackedColor.Unpack(Data.HighlightColor);
-            var rgba = new Vector4(color.R, color.G, color.B, color.A);
-
-            var flags = ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.AlphaBar;
-
-            if (ImGui.ColorEdit4("##chat-highlight-color", ref rgba, flags)) {
-                Data.HighlightColor = PackedColor.Pack(rgba.X, rgba.Y, rgba.Z, rgba.W);
-                settings.Changed();
-            }
-
-            ImGui.EndTable();
-        }
-
-        private void RenderLinks() {
-            Form.Section("Names and links");
-
-            if (!Form.BeginForm("chat-links")) {
-                return;
-            }
-
-            Form.Label("Names", "What clicking a name in chat does.");
+            Form.Label("Names", "What clicking a name in chat does. " + (chat.Feed.Supports(PlayerFeed.KindShareItem)
+                ? "To link an item, right-click it in your packs, the bank or a hotbar for Link in chat."
+                : "This server is too old for item links."));
 
             if (Form.Check("Click for a tell##chat-click-names", ref Data.ClickNames, "Clicking a name starts a tell to them "
                 + "in the box, as the game's chat does. Right-click a name for more: select them, invite them, add them as "
@@ -307,16 +303,49 @@ namespace DaraletPlayer.Ui {
                 settings.Changed();
             }
 
-            Form.Label("Items", "Linking items in chat.");
-            Widgets.TextWrapped(chat.Feed.Supports(PlayerFeed.KindShareItem)
-                ? "Right-click an item in your packs, the bank or a hotbar for Link in chat."
-                : "This server is too old for item links.");
-
+            RenderSavingRow();
             ImGui.EndTable();
+
+            if (problem != null) {
+                Widgets.TextColored(Colors.Warning, problem);
+            }
         }
 
-        private void RenderSaving() {
-            Form.Section("Saved chat");
+        /// <summary>Your name, more words, and the colour a lit-up line's drawn in, on one row.</summary>
+        private void RenderHighlightRow() {
+            Form.Label("Highlight", "Lines that mention your character, or any of the words beside it, light up in the "
+                + "colour at the end.");
+            var first = true;
+
+            if (Form.FlowCheck(ref first, "Your name##chat-highlight-name", ref Data.HighlightName, "Lights up lines with "
+                + "your character's name in them (not your own tells).")) {
+                settings.Changed();
+            }
+
+            var wordsWidth = (float)Math.Round(ImGui.GetFontSize() * 9);
+            Form.Flow(ref first, wordsWidth);
+            ImGui.SetNextItemWidth(wordsWidth);
+
+            if (ImGui.InputTextWithHint("##chat-highlights", "more words", ref Data.Highlights, 300)) {
+                settings.Changed();
+            }
+            Widgets.Tip("More words that light a line up, comma-separated: whole words, case ignored. A guild's name, an "
+                + "item you're after, a nickname. Lines from now on light up.");
+
+            var color = PackedColor.Unpack(Data.HighlightColor);
+            var rgba = new Vector4(color.R, color.G, color.B, color.A);
+            Form.Flow(ref first, ImGui.GetFrameHeight());
+
+            if (ImGui.ColorEdit4("##chat-highlight-color", ref rgba,
+                ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.AlphaBar)) {
+                Data.HighlightColor = PackedColor.Pack(rgba.X, rgba.Y, rgba.Z, rgba.W);
+                settings.Changed();
+            }
+            Widgets.Tip("What a lit-up line's background is drawn in.");
+        }
+
+        private void RenderSavingRow() {
+            Form.Label("Saved chat", "Chat written to text files, a file for each character and day.");
             var first = true;
 
             if (Form.FlowCheck(ref first, "Save to files##chat-save", ref Data.Save, "Writes chat as it comes to a text file "
@@ -340,41 +369,49 @@ namespace DaraletPlayer.Ui {
                 + "chat window. Saved files aren't touched.")) {
                 chat.ClearAll();
             }
-
-            if (problem != null) {
-                Widgets.TextColored(Colors.Warning, problem);
-            }
         }
 
-        /// <summary>A colour for each of the game's chat types, by category, and one for each chat channel.</summary>
+        /// <summary>
+        /// A colour for each of the game's chat types, by category, and one for each chat channel: folded, and as many to
+        /// a row as fit (up to three), since one a row ran to some thirty rows.
+        /// </summary>
         private void RenderColors() {
-            Form.Section("Colours");
-            Form.Hint("Each kind of line's colour, near the game's own to start. Channels have one each.");
+            var open = ImGui.CollapsingHeader("Colours##chat-colours");
+            Widgets.Tip("Each kind of line's colour, near the game's own to start. Channels have one each.");
 
-            if (!ImGui.BeginTable("chat-colors", 2, Widgets.TableFlags)) {
+            if (!open) {
                 return;
             }
 
-            ImGui.TableSetupColumn("Kind", ImGuiTableColumnFlags.WidthStretch);
-            ImGui.TableSetupColumn("Colour");
+            using var fold = Form.Folded();
+            var perRow = (int)Math.Max(1, Math.Min(3, ImGui.GetContentRegionAvail().X / (ImGui.GetFontSize() * 15)));
+
+            if (!ImGui.BeginTable("chat-colors", perRow * 2, Widgets.TableFlags)) {
+                return;
+            }
+
+            for (var i = 0; i < perRow; i++) {
+                ImGui.TableSetupColumn($"Kind##{i}", ImGuiTableColumnFlags.WidthStretch);
+                ImGui.TableSetupColumn($"Colour##{i}");
+            }
 
             foreach (var category in ChatCategoryInfo.All) {
                 if (category.Channel) {
-                    ColorRow(category.Label, category.Key, category.Color, category.Tip);
+                    ColorCell(category.Label, category.Key, category.Color, category.Tip);
                     continue;
                 }
 
                 foreach (var type in ChatTypeInfo.All.Where(t => t.Category == category.Category)) {
-                    ColorRow($"{category.Label}: {type.Label}", type.Key, type.Color, category.Tip);
+                    ColorCell($"{category.Label}: {type.Label}", type.Key, type.Color, category.Tip);
                 }
             }
 
             ImGui.EndTable();
         }
 
-        private void ColorRow(string label, string key, uint start, string tip) {
+        /// <summary>One kind's name in its colour, and its colour to pick, in the next two columns.</summary>
+        private void ColorCell(string label, string key, uint start, string tip) {
             ImGui.PushID(key);
-            ImGui.TableNextRow();
             ImGui.TableNextColumn();
             ImGui.AlignTextToFramePadding();
             var color = chat.ColorFor(key, start);
@@ -385,20 +422,17 @@ namespace DaraletPlayer.Ui {
             ImGui.TableNextColumn();
             var rgb = new Vector3(unpacked.R, unpacked.G, unpacked.B);
 
-            if (ImGui.ColorEdit3("##color", ref rgb, ImGuiColorEditFlags.NoInputs)) {
+            if (ImGui.ColorEdit3("##color", ref rgb, ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.NoOptions)) {
                 Data.Colors = Data.Colors ?? new System.Collections.Generic.Dictionary<string, uint>();
                 Data.Colors[key] = PackedColor.Pack(rgb.X, rgb.Y, rgb.Z, 1);
                 settings.Changed();
             }
+            Widgets.Tip(Data.Colors?.ContainsKey(key) == true ? "Its colour. Right-click for its start colour back."
+                : "Its colour, as it started.");
 
-            if (Data.Colors?.ContainsKey(key) == true) {
-                ImGui.SameLine();
-
-                if (ImGui.SmallButton("Reset")) {
-                    Data.Colors.Remove(key);
-                    settings.Changed();
-                }
-                Widgets.Tip("Back to the colour it started with.");
+            if (Data.Colors?.ContainsKey(key) == true && ImGui.IsItemClicked(ImGuiMouseButton.Right)) {
+                Data.Colors.Remove(key);
+                settings.Changed();
             }
 
             ImGui.PopID();

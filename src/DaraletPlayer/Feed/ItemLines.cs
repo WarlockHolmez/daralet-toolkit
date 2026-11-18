@@ -6,7 +6,7 @@ using System.Linq;
 namespace DaraletPlayer.Feed {
     /// <summary>
     /// An item's tooltip as lines: every stat its description (the Market API's, MarketListing) has, in sections. The tooltips
-    /// in the bank, the Loot tab, the Corpse window and market search all draw these, so the layout is changed in one place.
+    /// in the bank, the Looter, the Corpse window and market search all draw these, so the layout is changed in one place.
     /// </summary>
     public static class ItemLines {
         /// <summary>

@@ -105,7 +105,7 @@ namespace DaraletPlayer.Ui {
         /// <summary>
         /// ImGui.BeginTooltip, with the text as big as the window it's shown from: a tooltip is a window of its own,
         /// which ImGui draws at the font's own size, whatever the Text size or the window's size. extraScale goes on top (the
-        /// Loot tab's Item details size, for item tooltips).
+        /// Looter's Item details size, for item tooltips).
         /// </summary>
         /// <param name="always">Shown whatever Tooltips only while holding says (that setting's own tooltip).</param>
         public static void BeginTooltip(float extraScale = 1, bool always = false) {

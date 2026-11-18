@@ -45,6 +45,9 @@ namespace DaraletPlayer.Ui {
 
         private bool disposed;
 
+        /// <summary>Draws the Looter sub tab (LootTab.Render), set by PlayerHud: the Looter is made after this one.</summary>
+        public Action Looter { get; set; }
+
         public InventoryTab(PlayerFeed feed, ItemIcons icons, Settings settings) {
             this.feed = feed;
             this.settings = settings;
@@ -118,6 +121,13 @@ namespace DaraletPlayer.Ui {
             if (Widgets.TabItem("Bank", "Your bank's packs and what's in them, while your bank is open. "
                 + "Drag items between packs. Withdraw, sort, search and the other /bank commands are at the top.")) {
                 RenderBankTab(bank, banking);
+                ImGui.EndTabItem();
+            }
+
+            // the looter and its loot profiles, once a main tab of their own, Loot (the user's call, November 2026)
+            if (Looter != null && Widgets.TabItem("Looter", "What happens when you open a corpse or a chest: the looter, "
+                + "and the loot profiles whose rules decide what it keeps, salvages or shows.")) {
+                Looter();
                 ImGui.EndTabItem();
             }
 
@@ -316,7 +326,7 @@ namespace DaraletPlayer.Ui {
                 settings.Changed();
             }
             Widgets.Tip("Highlights the items your active loot profile's rules would mark, with each rule's highlight and icon "
-                + "(set in the Loot tab). The server describes every item to check them, so full "
+                + "(set in the Inventory tab's Looter). The server describes every item to check them, so full "
                 + "packs take a little while to fill in.");
 
             ImGui.SameLine();

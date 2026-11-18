@@ -37,7 +37,7 @@ namespace DaraletPlayer.Ui {
             this.feed = feed;
             this.settings = settings;
 
-            window = new FloatingWindow("character", "Character", settings, new Vector2(420, 100), RenderContents,
+            window = new FloatingWindow("character", "Character Stats", settings, new Vector2(420, 100), RenderContents,
                 visibleByDefault: false, defaultSize: new Vector2(420, 640));
             xpBar = new XpBar(feed, settings);
         }
@@ -56,9 +56,10 @@ namespace DaraletPlayer.Ui {
         }
 
         private void RenderSettings() {
-            if (!Form.SettingsHeader("character-settings", "The Character window and the XP bar: whether they're on "
-                + "screen, their size and background, and how the XP bar looks and what it shows. The Character window's "
-                + "toolbar button is under the Config tab's Client UI Override.")) {
+            if (!Form.SettingsHeader("character-settings", "The Character Stats window and the XP bar: whether they're "
+                + "on screen, their size and background, and how the XP bar looks and what it shows. Whether the "
+                + "Character Stats window takes the game's Character Information panel's place is under the Config "
+                + "tab's Client UI Override.")) {
                 return;
             }
 
@@ -69,7 +70,7 @@ namespace DaraletPlayer.Ui {
         }
 
         private void RenderCharacterWindowSettings() {
-            Form.Section("Character window");
+            Form.Section("Character Stats window");
             window.RenderControls("This tab in a window of its own, to keep on screen while you play. Drag its corner to "
                 + "size it.");
         }

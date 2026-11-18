@@ -41,65 +41,73 @@ namespace DaraletPlayer.Ui {
         public void Render() {
             RenderFloating();
             RenderKinds();
-            RenderWindow();
-            RenderSaving();
+            RenderLogAndSaving();
         }
 
+        /// <summary>
+        /// Floating combat text in four rows, its numbers short sliders (the user's call, November 2026): it was a row
+        /// for each number, and a paragraph, now the Show row's tooltip.
+        /// </summary>
         private void RenderFloating() {
             Form.Section("Floating combat text");
-            Form.Hint("Numbers that rise and fade as you fight: over whoever they landed on, or from one place on screen for "
-                + "what you do and another for what's done to you.");
 
             if (!Form.BeginForm("combat-text")) {
                 return;
             }
 
             var data = settings.Data;
-            Form.Label("Show", "Whether floating combat text is drawn.");
+            Form.Label("Show", "Numbers that rise and fade as you fight: over whoever they landed on, or from one place on "
+                + "screen for what you do and another for what's done to you.");
+            var first = true;
 
-            if (Form.Check("Enabled##combat-text-on", ref data.CombatTextOn, "Shows floating combat text. The table below "
-                + "says which kinds. It's read from chat, so kinds you squelch in the game don't show.")) {
+            if (Form.FlowCheck(ref first, "Enabled##combat-text-on", ref data.CombatTextOn, "Shows floating combat text. "
+                + "The table below says which kinds. It's read from chat, so kinds you squelch in the game don't show.")) {
                 settings.Changed();
             }
 
-            ImGui.SameLine();
+            Form.Flow(ref first, ImGui.CalcTextSize("Preview").X + ImGui.GetStyle().FramePadding.X * 2);
 
             if (Form.LitButton("Preview##combat-text-preview", text.Preview)) {
                 text.Preview = !text.Preview;
             }
             Widgets.Tip("Keeps sample numbers rising, to see their size and place while you change these. Click again to stop.");
 
-            Form.Label("Size", "How tall the text is, in pixels. Criticals, kills and deaths are bigger.");
-            Changed(Form.Slider("##combat-text-size", ref data.CombatTextSize, SettingsData.MinCombatTextSize,
-                SettingsData.MaxCombatTextSize, "%d px"));
-
-            Form.Label("Time", "How long each number stays on screen, in tenths of a second.");
-            Changed(Form.Slider("##combat-text-time", ref data.CombatTextTenths, SettingsData.MinCombatTextTenths,
-                SettingsData.MaxCombatTextTenths, "%d tenths"));
-
-            Form.Label("Over target", "Whether numbers float over whoever they landed on.");
-
-            if (Form.Check("Over their head##combat-text-over", ref data.CombatTextOverHead, "Your hits float over the creature "
-                + "you hit, and what's done to you over your own head. Chat only gives a name, so among several of that name "
-                + "it's the one you hit last, then your selection, then the nearest. Anything it can't place uses the places "
-                + "on screen below. They're drawn on top of everything, so a wall doesn't hide them.")) {
+            if (Form.FlowCheck(ref first, "Over their head##combat-text-over", ref data.CombatTextOverHead, "Your hits "
+                + "float over the creature you hit, and what's done to you over your own head. Chat only gives a name, so "
+                + "among several of that name it's the one you hit last, then your selection, then the nearest. Anything "
+                + "it can't place uses the places on screen below. They're drawn on top of everything, so a wall doesn't "
+                + "hide them.")) {
                 settings.Changed();
             }
 
+            Form.Label("Text", "How tall the numbers are, how long each stays, and, over their heads, how high they start.");
+            first = true;
+            Changed(Form.FlowSlider(ref first, "##combat-text-size", ref data.CombatTextSize,
+                SettingsData.MinCombatTextSize, SettingsData.MaxCombatTextSize, "%d px tall", "How tall the text is, in "
+                + "pixels. Criticals, kills and deaths are bigger."));
+            Changed(Form.FlowSlider(ref first, "##combat-text-time", ref data.CombatTextTenths,
+                SettingsData.MinCombatTextTenths, SettingsData.MaxCombatTextTenths, "%d tenths", "How long each number "
+                + "stays on screen, in tenths of a second."));
+
             if (data.CombatTextOverHead) {
-                Form.Label("Height", "How far above a person's height the numbers begin, in tenths of a meter. The game "
-                    + "doesn't say how tall a creature is, so this is one height for all of them.");
-                Changed(Form.Slider("##combat-text-head-height", ref data.CombatTextHeadHeight, -20, 40, "%d tenths"));
+                Changed(Form.FlowSlider(ref first, "##combat-text-head-height", ref data.CombatTextHeadHeight, -20, 40,
+                    "%d tenths up", "How far above a person's height the numbers begin, in tenths of a meter. The game "
+                    + "doesn't say how tall a creature is, so this is one height for all of them."));
             }
 
-            Form.Label("You: across", "Where what you do starts, as a percent of the way across the screen.");
-            Changed(Form.Slider("##combat-text-yours-x", ref data.CombatTextYoursX, 0, 100, "%d%%"));
-            Form.Label("You: down", "Where what you do starts, as a percent of the way down the screen.");
-            Changed(Form.Slider("##combat-text-yours-y", ref data.CombatTextYoursY, 0, 100, "%d%%"));
-            Form.Label("On you: across", "Where what's done to you starts, as a percent of the way across the screen.");
-            Changed(Form.Slider("##combat-text-theirs-x", ref data.CombatTextTheirsX, 0, 100, "%d%%"));
-            Form.Label("On you: down", "Where what's done to you starts, as a percent of the way down the screen.");
-            Changed(Form.Slider("##combat-text-theirs-y", ref data.CombatTextTheirsY, 0, 100, "%d%%"));
+            Form.Label("Yours at", "Where what you do starts, as a percent of the way across and down the screen.");
+            first = true;
+            Changed(Form.FlowSlider(ref first, "##combat-text-yours-x", ref data.CombatTextYoursX, 0, 100, "%d%% across",
+                "Where what you do starts, as a percent of the way across the screen."));
+            Changed(Form.FlowSlider(ref first, "##combat-text-yours-y", ref data.CombatTextYoursY, 0, 100, "%d%% down",
+                "Where what you do starts, as a percent of the way down the screen."));
+
+            Form.Label("On you at", "Where what's done to you starts, as a percent of the way across and down the screen.");
+            first = true;
+            Changed(Form.FlowSlider(ref first, "##combat-text-theirs-x", ref data.CombatTextTheirsX, 0, 100,
+                "%d%% across", "Where what's done to you starts, as a percent of the way across the screen."));
+            Changed(Form.FlowSlider(ref first, "##combat-text-theirs-y", ref data.CombatTextTheirsY, 0, 100,
+                "%d%% down", "Where what's done to you starts, as a percent of the way down the screen."));
 
             ImGui.EndTable();
         }
@@ -165,14 +173,28 @@ namespace DaraletPlayer.Ui {
             }
         }
 
-        private void RenderWindow() {
-            Form.Section("Combat log window");
-            window.RenderControls("A window listing recent combat, each kind in its colour, that you can search. The Log "
+        /// <summary>The Combat log window and saved logs, a row each in one section: a section each before.</summary>
+        private void RenderLogAndSaving() {
+            Form.Section("Log and saved logs");
+
+            if (!Form.BeginForm("combat-log-rows")) {
+                return;
+            }
+
+            Form.Label("Log window", "A window listing recent combat, each kind in its colour, that you can search. The Log "
                 + "column above says which kinds it lists.");
+            window.RenderCompactControls("A window listing recent combat, each kind in its colour, that you can search. "
+                + "The Log column above says which kinds it lists.");
+            Form.Label("Saved logs", "Combat written to text files, a file for each character and day.");
+            RenderSaving();
+            ImGui.EndTable();
+
+            if (problem != null) {
+                Widgets.TextColored(Colors.Warning, problem);
+            }
         }
 
         private void RenderSaving() {
-            Form.Section("Saved logs");
             var first = true;
 
             if (Form.FlowCheck(ref first, "Save to files##combat-save", ref settings.Data.CombatLogSave, "Writes each line of "
@@ -191,10 +213,6 @@ namespace DaraletPlayer.Ui {
                 catch (Exception ex) {
                     problem = $"Couldn't open the folder: {ex.Message}";
                 }
-            }
-
-            if (problem != null) {
-                Widgets.TextColored(Colors.Warning, problem);
             }
         }
 
