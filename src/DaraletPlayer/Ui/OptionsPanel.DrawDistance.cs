@@ -100,6 +100,12 @@ namespace DaraletPlayer.Ui {
                 Changed();
             }
 
+            Form.Label("Billboards", "Flat pictures of the trees past Scenery, out to Landscape's edge.");
+
+            if (ImGui.Checkbox("Draw far trees as billboards##draw-distance-billboards", ref options.Billboards)) {
+                Changed();
+            }
+
             ImGui.EndDisabled();
             ImGui.EndTable();
         }

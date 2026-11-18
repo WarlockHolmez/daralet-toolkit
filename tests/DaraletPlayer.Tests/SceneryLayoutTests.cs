@@ -116,5 +116,25 @@ namespace DaraletPlayer.Tests {
                 }
             }
         }
+
+        [TestMethod]
+        public void LessDetailFlattensAHump() {
+            // flat but for the middle vertex (4, 4), 50 high (100 m)
+            var heights = new List<byte>(new byte[81]);
+            heights[4 * 9 + 4] = 50;
+            Assert.AreEqual(100f, SceneryLayout.Ground(Block, heights, Table, 96, 96).Z, 0.001f);
+            Assert.AreEqual(100f, SceneryLayout.Ground(Block, heights, Table, 96, 96, 2).Z, 0.001f,
+                "every second vertex still has the middle");
+            Assert.AreEqual(0f, SceneryLayout.Ground(Block, heights, Table, 96, 96, 8).Z, 0.001f,
+                "a block of two triangles has only its corners");
+        }
+
+        [TestMethod]
+        public void TheGameDrawsFarBlocksInLessDetail() {
+            Assert.AreEqual(1, SceneryLayout.DetailStep(5, 5));
+            Assert.AreEqual(2, SceneryLayout.DetailStep(6, 5));
+            Assert.AreEqual(4, SceneryLayout.DetailStep(8, 5));
+            Assert.AreEqual(8, SceneryLayout.DetailStep(9, 5));
+        }
     }
 }

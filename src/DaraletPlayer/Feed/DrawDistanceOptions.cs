@@ -56,6 +56,11 @@ namespace DaraletPlayer.Feed {
 
         public const int MinSceneryDensity = 10;
 
+        /// <summary>
+        /// Flat pictures of the trees past the scenery radius, out to the landscape's edge (Ui/DrawDistance.Billboards.cs).
+        /// </summary>
+        [DataMember(Name = "billboards")] public bool Billboards;
+
         // Settings that came and went in November 2026, still in a settings.json saved then and read by nothing (the
         // reader skips names it doesn't know): "modelDetail"..., three detail bands, and "levelDistance1"..., three
         // model level distances, which "detailFalloff" replaced, then that too (with Far scenery on, a tree's one real
@@ -93,7 +98,7 @@ namespace DaraletPlayer.Feed {
             return $"Scenery {ClampedSceneryRadius} at {ClampedSceneryDensity}%, landscape "
                 + (ClampedLandscapeRadius == 0 ? "game's" : ClampedLandscapeRadius.ToString())
                 + $", detail {(ClampedDetailDistance == 0 ? "game's" : ClampedDetailDistance + " m")}"
-                + $", far {ClampedLowDetailDistance} m";
+                + $", far {ClampedLowDetailDistance} m" + (Billboards ? ", billboards" : "");
         }
 
         [OnDeserializing]
@@ -108,6 +113,7 @@ namespace DaraletPlayer.Feed {
             DetailDistance = 0;
             LowDetailDistance = 0;
             SceneryDensity = 100;
+            Billboards = false;
         }
     }
 }

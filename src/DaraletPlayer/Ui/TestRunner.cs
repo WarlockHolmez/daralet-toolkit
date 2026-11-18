@@ -145,6 +145,13 @@ namespace DaraletPlayer.Ui {
                     Result($"set {step.Field} {step.Number.ToString(CultureInfo.InvariantCulture)}: "
                         + settings.Data.DrawDistance.Summary());
                     return true;
+                case "option": {
+                    var option = uint.Parse(step.Field);
+                    var set = ClientOptions.Set(option, step.Number != 0);
+                    Result($"option {option} {(step.Number != 0 ? "on" : "off")}: "
+                        + (set ? $"now {ClientOptions.Get(option)}" : "couldn't be set"));
+                    return true;
+                }
                 case "chat":
                     CoreManager.Current.Actions.InvokeChatParser(step.Words);
                     Result("chat: " + step.Words);
@@ -232,6 +239,9 @@ namespace DaraletPlayer.Ui {
                 case "far":
                     options.LowDetailDistance = value;
                     break;
+                case "billboards":
+                    options.Billboards = value != 0;
+                    break;
             }
 
             changed();
@@ -241,7 +251,8 @@ namespace DaraletPlayer.Ui {
             var frames = FrameRateWindow.Recent(seconds);
             var rate = frames == null ? "no frame rate (Frame Rate window not running)"
                 : $"{frames.Fps:0.0} fps, 1% low {frames.LowFps:0.0}, worst {frames.WorstMs:0} ms, {frames.Hitches} pauses";
-            Result($"measure {seconds:0} s: {rate}; {DrawDistance.FreeMegabytes()} MB free; {drawDistance.Loaded}");
+            Result($"measure {seconds:0} s: {rate}; {DrawDistance.FreeMegabytes()} MB free; {drawDistance.Loaded}; "
+                + drawDistance.BillboardState);
         }
 
         /// <summary>The steps after this one written back for after the relaunch, and the game exited.</summary>
@@ -289,6 +300,25 @@ namespace DaraletPlayer.Ui {
 
             disposed = true;
             CoreManager.Current.RenderFrame -= Core_RenderFrame;
+
+            // a hot reload (or the plugin stopping) mid-run isn't a crash: the step running and those after it are
+            // handed to the next copy, which starts them afresh. The first build left progress.txt, and the new copy
+            // dropped the script as if the game had died
+            try {
+                if (steps != null && !exiting) {
+                    var rest = steps.Skip(index).Select(s => s.Text).ToList();
+                    File.WriteAllLines(RunFile, rest);
+
+                    if (File.Exists(ProgressFile)) {
+                        File.Delete(ProgressFile);
+                    }
+
+                    Result($"the plugin stopped (a reload?): {rest.Count} steps handed on");
+                }
+            }
+            catch (Exception ex) {
+                PluginCore.LogFile("[test-run] " + ex);
+            }
         }
     }
 }

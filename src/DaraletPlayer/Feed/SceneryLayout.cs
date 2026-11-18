@@ -194,6 +194,14 @@ namespace DaraletPlayer.Feed {
             return Ground(landblock, heights, heightTable, x, y).Z;
         }
 
+        /// <summary>
+        /// How many vertices apart the game draws a block's ground, by its ring from yours and the full-detail radius:
+        /// LScape::get_block_orient's 1 within it, then 2, 4 out to 3 past it, and 8 (two triangles a block) beyond.
+        /// </summary>
+        public static int DetailStep(int ring, int fullRadius) {
+            return ring <= fullRadius ? 1 : ring <= fullRadius + 1 ? 2 : ring <= fullRadius + 3 ? 4 : 8;
+        }
+
         /// <summary>A place's cell along one side, 0 to 7.</summary>
         public static int CellOf(float meters) {
             return Math.Min(7, Math.Max(0, (int)Math.Floor(meters / CellSize)));
@@ -201,19 +209,24 @@ namespace DaraletPlayer.Feed {
 
         /// <summary>
         /// The ground at a place in the block: its height, and its normal's upward part (1 flat, less as it steepens; the
-        /// value ObjectDesc::CheckSlope is given), both of the cell's triangle the place is on.
+        /// value ObjectDesc::CheckSlope is given), both of the cell's triangle the place is on. With a step, the
+        /// ground as the game draws a block in less detail: every step-th vertex, each coarse cell split by
+        /// SplitNwSe of its coarse index (CLandBlockStruct::ConstructPolygons, 0x532A50, adds the cell's own index to
+        /// the block's times 8 whatever its detail).
         /// </summary>
         public static (float Z, float Upward) Ground(uint landblock, IReadOnlyList<byte> heights,
-            IReadOnlyList<float> heightTable, float x, float y) {
+            IReadOnlyList<float> heightTable, float x, float y, int step = 1) {
             if (heights == null || heights.Count < VertexDim * VertexDim || heightTable == null || heightTable.Count < 256) {
                 return (0, 1);
             }
 
-            var cellX = Math.Min(VertexDim - 2, Math.Max(0, (int)Math.Floor(x / CellSize)));
-            var cellY = Math.Min(VertexDim - 2, Math.Max(0, (int)Math.Floor(y / CellSize)));
-            var u = Math.Min(1, Math.Max(0, x / CellSize - cellX));
-            var v = Math.Min(1, Math.Max(0, y / CellSize - cellY));
-            float H(int vx, int vy) => heightTable[heights[vx * VertexDim + vy]];
+            var size = CellSize * step;
+            var cells = (VertexDim - 1) / step;
+            var cellX = Math.Min(cells - 1, Math.Max(0, (int)Math.Floor(x / size)));
+            var cellY = Math.Min(cells - 1, Math.Max(0, (int)Math.Floor(y / size)));
+            var u = Math.Min(1, Math.Max(0, x / size - cellX));
+            var v = Math.Min(1, Math.Max(0, y / size - cellY));
+            float H(int vx, int vy) => heightTable[heights[vx * step * VertexDim + vy * step]];
             var h00 = H(cellX, cellY);
             var h10 = H(cellX + 1, cellY);
             var h01 = H(cellX, cellY + 1);
@@ -248,8 +261,8 @@ namespace DaraletPlayer.Feed {
             }
 
             // the normal of (1, 0, riseX / cell) and (0, 1, riseY / cell), made unit: its upward part
-            var gx = riseX / CellSize;
-            var gy = riseY / CellSize;
+            var gx = riseX / size;
+            var gy = riseY / size;
             return (z, (float)(1 / Math.Sqrt(1 + gx * gx + gy * gy)));
         }
     }

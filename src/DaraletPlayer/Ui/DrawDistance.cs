@@ -107,6 +107,10 @@ namespace DaraletPlayer.Ui {
 
                 NoteFrame();
 
+                if (CoreManager.Current.CharacterFilter.LoginStatus == 3) {
+                    BillboardFrame();
+                }
+
                 if (DateTime.UtcNow < nextLook || CoreManager.Current.CharacterFilter.LoginStatus != 3) {
                     return;
                 }
@@ -250,6 +254,8 @@ namespace DaraletPlayer.Ui {
 
             ApplyDetail(on ? options.ClampedDetailDistance : 0);
             ApplyLowDetail(on ? options.ClampedLowDetailDistance : 0);
+            UpdateBillboards(on && options.Billboards && !inPortal && lscape != IntPtr.Zero,
+                lscape != IntPtr.Zero ? *(int*)lscape : 0);
         }
 
         /// <summary>The Degrade Distance wanted, or 0 to put the game's back.</summary>
@@ -346,6 +352,7 @@ namespace DaraletPlayer.Ui {
                     reload = true;
                 }
 
+                DisposeBillboards();
                 UnhookOnRoad();
                 UnhookGetDegrade();
                 ReloadAtGameRadius(reload);

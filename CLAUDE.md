@@ -2245,6 +2245,33 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   `+0x48`, origin `+0x3C`): 121 blocks, 13,037 real, 12,942 predicted, 90.5% within 1 m, heights exact. The slope
   and building rules brought the count from 3% over to 1% under; the 10% unmatched are placed in both, more than
   1 m apart, which billboards far off won't show.
+- **Billboards, stages 2 and 3: pictures and drawing** (`Feed/TextureDecode.cs`, `Feed/ImpostorRaster.cs`,
+  `Ui/BillboardModels.cs`, `Ui/BillboardModel.cs`, `Ui/DrawDistance.Billboards.cs`; Billboards in the Draw Distance
+  rows, `DrawDistanceOptions.Billboards`, `billboards`, off to start; the test step `set billboards 1`). Each scenery
+  model is drawn side on once by a small software renderer (a Setup's parts by its first placement frame and default
+  scales; DXT1, DXT5 and INDEX16 textures decoded; clip-map surfaces cut out below half alpha) into a 128-pixel-tall
+  A8R8G8B8 texture (managed pool); models under 2 m (the ground scatter) get none. Every block within the landscape
+  radius outside the full-detail ring has its scenery worked out by `SceneryLayout` (6 blocks a frame), and each object
+  becomes two crossed upright quads turned by its yaw and sized by its scale, in one vertex buffer grouped by model,
+  made again when you cross a landblock or a setting changes. Drawn on Decal's RenderFrame, after the 3D world and
+  before the UI, so the world's depth buffer hides them behind hills: world identity, the device's own View and
+  Projection (skipped while `CombatProjection.IsSwapped`), depth test and write, alpha test at 128, no blending,
+  lighting or culling, the device's state captured and put back with a StateBlock. Not indoors, in portal space, or in
+  a frame after you've crossed a landblock until it's rebuilt. `CustomVertex.PositionTextured.Format` can't be compiled
+  without Microsoft.VisualC (a C++ const), so the format is written out. Tried in the game (scenery 5 at 30%,
+  landscape 15): 17,959 billboards of 25 models, 71,836 triangles, built in about a second, 115 MB, and no frame rate
+  cost (63 fps before, 65 after); the far ridges had trees, hidden behind the near hill. At landscape 24: 47,346
+  billboards, 62 fps. **They stand on the ground the game draws**, not the true ground: past the full-detail ring the
+  game draws a block from every 2nd, then 4th, then 8th vertex (`SceneryLayout.DetailStep`, get_block_orient's
+  rings), so a far block is two triangles and trees on a hump floated over the flattened ridge (seen in the game).
+  `SceneryLayout.Ground(..., step)` takes those vertices, each coarse cell split by `SplitNwSe` of its coarse index
+  (`CLandBlockStruct::ConstructPolygons`, `0x532A50`, adds the cell's own index to the block's times 8 at any
+  detail). **The game's distance fog covers them** (Disable Distance Fog, option 48, off): the device's fog states are
+  left as the game set them, and they fade with the hills (seen in the game). Not yet: lighting to match the game's
+  (they're drawn unlit), a handover distance from real trees, density of their own, and a rebuild for each step of
+  the scenery stepping up. Test steps `set billboards 0|1` and `option <PlayerOption> 0|1` (a game option, through
+  `ClientOptions.Set`); a hot reload mid-run hands the steps left to the next copy (`TestRunner.Dispose`): before, the
+  new copy took the leftover progress.txt for a crash and dropped the script.
 - **Everything the plugin writes** goes in `Documents\Decal Plugins\Daralet Toolkit` (`DataFolder`): `settings.json`,
   `profiles.json`, `Settings Profiles`, `Settings Exports`, `log.txt`, `Loot Profiles`, `Hotbar Layouts`, `Combat Logs`, `Chat Logs`, `Frame Rate Logs`, `Test Runs`, `world-data`. It was `Decal Plugins\Daralet` before the rename: `PluginCore.Startup` moves
   that folder over first thing (`DataFolder.MoveOldFolder`, `FolderMove.Once`, copying instead if a file's held open),
