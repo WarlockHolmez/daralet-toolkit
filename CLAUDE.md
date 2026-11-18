@@ -2267,9 +2267,21 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   `SceneryLayout.Ground(..., step)` takes those vertices, each coarse cell split by `SplitNwSe` of its coarse index
   (`CLandBlockStruct::ConstructPolygons`, `0x532A50`, adds the cell's own index to the block's times 8 at any
   detail). **The game's distance fog covers them** (Disable Distance Fog, option 48, off): the device's fog states are
-  left as the game set them, and they fade with the hills (seen in the game). Not yet: lighting to match the game's
-  (they're drawn unlit), a handover distance from real trees, density of their own, and a rebuild for each step of
-  the scenery stepping up. Test steps `set billboards 0|1` and `option <PlayerOption> 0|1` (a game option, through
+  left as the game set them, and they fade with the hills (seen in the game). **Lit as the game lights outdoors**
+  (`Ui/DrawDistance.Lighting.cs`): the device's light 0 has no direction left in it by RenderFrame (read with
+  IDirect3DDevice9::GetLight; Managed DirectX's `Lights[]` only echoes what it set), so lit by it they got the
+  ambient alone and went nearly black. The client's own outdoor light is in globals: the ambient
+  (`SmartBox::SetWorldAmbientLight`, colour times level, `0x8682B0`), the sun's colour (`0x8682BC`) and its vector
+  toward the sun (`0x8682C8`, x east, y north, z up; LScape's copy at `0x842950`), worked out from the sky
+  (`SkyDesc::GetLighting`); `LScape::calc_object_light` (`0x455850`) is the ambient level plus the sun vector's length
+  times 0.2. The billboards are drawn with that ambient and the sun on light 0 (put back by the state block), a white
+  material, normals up, and 0.4 of the sun (`SunShare`): measured against real trees in the same places (the mean
+  foliage colour in two screenshots), which take about 0.37. The real trees are still a little bluer. **Density
+  matters little to them**: at 100% density with real scenery held at the game's 1 (the memory guard refused 5,
+  896 MB short), 170,037 billboards from ring 2 to 24 ran at 142 fps, where real trees to 5 at 60% ran at 33 (seen
+  in the game, November 2026): the real scenery is the cost, the billboards almost none. Not yet: a handover distance
+  from real trees, density of their own, mipmaps (far billboards sparkle), and a rebuild for each step of the scenery
+  stepping up. Test steps `set billboards 0|1` and `option <PlayerOption> 0|1` (a game option, through
   `ClientOptions.Set`); a hot reload mid-run hands the steps left to the next copy (`TestRunner.Dispose`): before, the
   new copy took the leftover progress.txt for a crash and dropped the script.
 - **Everything the plugin writes** goes in `Documents\Decal Plugins\Daralet Toolkit` (`DataFolder`): `settings.json`,

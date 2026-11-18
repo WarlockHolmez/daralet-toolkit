@@ -25,16 +25,18 @@ namespace DaraletPlayer.Ui {
     /// as it left them, the world in your landblock's meters with up the middle number (x, height, y), as the combat
     /// numbers read it (Feed/CombatProjection.cs); a frame where the device holds the camera with two axes swapped (some
     /// spell effects) draws none. The device's state is captured before and put back after (a StateBlock): depth test
-    /// and write on, alpha test at half (the pictures' cut-out), no blending, no lighting, no culling, the texture
-    /// alone. A failure is logged once and billboards stop for the session. `[billboards]` lines in log.txt.
+    /// and write on, alpha test at half (the pictures' cut-out), no blending or culling, lit by the game's own sun and
+    /// ambient (DrawDistance.Lighting.cs), the texture
+    /// times that light. A failure is logged once and billboards stop for the session. `[billboards]` lines in log.txt.
     /// </para>
     /// Untested in the game when written.
     /// </summary>
     internal sealed partial class DrawDistance {
         private const int BlocksAFrame = 6;
 
-        // CustomVertex.PositionTextured.Format, which the compiler can't read without Microsoft.VisualC (a C++ const)
-        private const VertexFormats BillboardFormat = VertexFormats.Position | VertexFormats.Texture1;
+        // CustomVertex.PositionNormalTextured.Format, which the compiler can't read without Microsoft.VisualC (a C++ const)
+        private const VertexFormats BillboardFormat =
+            VertexFormats.Position | VertexFormats.Normal | VertexFormats.Texture1;
 
         private readonly BillboardModels billboardModels = new BillboardModels();
         private readonly Dictionary<uint, List<PlacedScenery>> blockScenery = new Dictionary<uint, List<PlacedScenery>>();
@@ -120,7 +122,8 @@ namespace DaraletPlayer.Ui {
                 + $"{blocksToWorkOut.Count} to work out");
         }
 
-        /// <summary>Every frame: a few more blocks worked out, the buffer made once they all are, and the billboards drawn.</summary>
+        /// <summary>Every frame: a few more blocks worked out, the buffer made once they all are, and the billboards
+        /// drawn.</summary>
         private void BillboardFrame() {
             if (billboardKey == null || billboardsFailed) {
                 return;
@@ -167,7 +170,7 @@ namespace DaraletPlayer.Ui {
         /// <summary>The crossed pictures of every far object, grouped by model, into one vertex buffer.</summary>
         private void BuildBillboards(Device device, ACE.DatLoader.DatDatabase portal) {
             billboardsToBuild = false;
-            var byModel = new Dictionary<BillboardModel, List<CustomVertex.PositionTextured>>();
+            var byModel = new Dictionary<BillboardModel, List<CustomVertex.PositionNormalTextured>>();
             var hx = (int)(billboardHome >> 8);
             var hy = (int)(billboardHome & 0xFF);
             var objects = 0;
@@ -194,7 +197,7 @@ namespace DaraletPlayer.Ui {
                     }
 
                     if (!byModel.TryGetValue(model, out var vertices)) {
-                        vertices = new List<CustomVertex.PositionTextured>();
+                        vertices = new List<CustomVertex.PositionNormalTextured>();
                         byModel[model] = vertices;
                     }
 
@@ -213,7 +216,8 @@ namespace DaraletPlayer.Ui {
                 return;
             }
 
-            billboardBuffer = new VertexBuffer(typeof(CustomVertex.PositionTextured), all.Length, device, Usage.WriteOnly,
+            billboardBuffer = new VertexBuffer(typeof(CustomVertex.PositionNormalTextured), all.Length, device,
+                Usage.WriteOnly,
                 BillboardFormat, Pool.Managed);
             billboardBuffer.SetData(all, 0, LockFlags.None);
             var start = 0;
@@ -232,7 +236,8 @@ namespace DaraletPlayer.Ui {
         /// Two upright pictures through the object's place at right angles, turned by its yaw: world x and y in your
         /// landblock's meters, z the ground; the device's world is (x, height, y).
         /// </summary>
-        private static void AddCrossedQuads(List<CustomVertex.PositionTextured> vertices, BillboardModel model, float x,
+        private static void AddCrossedQuads(List<CustomVertex.PositionNormalTextured> vertices, BillboardModel model,
+            float x,
             float y, float z, float yaw, float scale) {
             var half = model.Width * scale / 2;
             var bottom = z + model.Bottom * scale;
@@ -248,10 +253,10 @@ namespace DaraletPlayer.Ui {
                 var ly = cy - dy * half;
                 var rx = cx + dx * half;
                 var ry = cy + dy * half;
-                var bl = new CustomVertex.PositionTextured(lx, bottom, ly, 0, 1);
-                var br = new CustomVertex.PositionTextured(rx, bottom, ry, 1, 1);
-                var tl = new CustomVertex.PositionTextured(lx, top, ly, 0, 0);
-                var tr = new CustomVertex.PositionTextured(rx, top, ry, 1, 0);
+                var bl = new CustomVertex.PositionNormalTextured(lx, bottom, ly, 0, 1, 0, 0, 1);
+                var br = new CustomVertex.PositionNormalTextured(rx, bottom, ry, 0, 1, 0, 1, 1);
+                var tl = new CustomVertex.PositionNormalTextured(lx, top, ly, 0, 1, 0, 0, 0);
+                var tr = new CustomVertex.PositionNormalTextured(rx, top, ry, 0, 1, 0, 1, 0);
                 vertices.Add(bl);
                 vertices.Add(tl);
                 vertices.Add(tr);
@@ -276,6 +281,7 @@ namespace DaraletPlayer.Ui {
             }
 
             savedState = savedState ?? new StateBlock(device, StateBlockType.All);
+            LogDeviceLights(device);
             savedState.Capture();
 
             try {
@@ -289,8 +295,16 @@ namespace DaraletPlayer.Ui {
                 device.RenderState.AlphaFunction = Compare.GreaterEqual;
                 device.RenderState.AlphaBlendEnable = false;
                 device.RenderState.CullMode = Cull.None;
-                device.RenderState.Lighting = false;
-                device.TextureState[0].ColorOperation = TextureOperation.SelectArg1;
+                // the game's sun and ambient left as they are (DrawDistance.Lighting.cs), on a white material, normals up
+                device.RenderState.Lighting = true;
+                device.RenderState.ColorVertex = false;
+                device.RenderState.SpecularEnable = false;
+                LightLikeTheGame(device);
+                device.Material = new Material {
+                    DiffuseColor = new ColorValue(1f, 1f, 1f), AmbientColor = new ColorValue(1f, 1f, 1f),
+                };
+                device.TextureState[0].ColorOperation = TextureOperation.Modulate;
+                device.TextureState[0].ColorArgument2 = TextureArgument.Diffuse;
                 device.TextureState[0].ColorArgument1 = TextureArgument.TextureColor;
                 device.TextureState[0].AlphaOperation = TextureOperation.SelectArg1;
                 device.TextureState[0].AlphaArgument1 = TextureArgument.TextureColor;
