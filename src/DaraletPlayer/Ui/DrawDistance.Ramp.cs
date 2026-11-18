@@ -17,6 +17,26 @@ namespace DaraletPlayer.Ui {
         /// <summary>When the next step up may be taken.</summary>
         private DateTime nextStepAt = DateTime.MinValue;
 
+        /// <summary>When the last step up was taken, and when the game last took over HitchMs over a frame.</summary>
+        private DateTime lastStepAt = DateTime.MinValue;
+        private DateTime lastHitchAt = DateTime.MinValue;
+        private readonly System.Diagnostics.Stopwatch frameClock = System.Diagnostics.Stopwatch.StartNew();
+        private double lastFrameMs = -1;
+
+        /// <summary>
+        /// Each of Decal's RenderFrames is one of the game's frames: a slow one means it's still loading (or behind
+        /// another window), and the next step waits for a second without one.
+        /// </summary>
+        private void NoteFrame() {
+            var ms = frameClock.Elapsed.TotalMilliseconds;
+
+            if (lastFrameMs >= 0 && ms - lastFrameMs > DrawDistanceRamp.HitchMs) {
+                lastHitchAt = DateTime.UtcNow;
+            }
+
+            lastFrameMs = ms;
+        }
+
         private void ListenForPortals() {
             CoreManager.Current.CharacterFilter.ChangePortalMode += CharacterFilter_ChangePortalMode;
         }
@@ -47,8 +67,13 @@ namespace DaraletPlayer.Ui {
         private (int Scenery, int Landscape) NextStep(int scenery, int targetScenery, int landscape,
             int targetLandscape) {
             var goingUp = targetScenery > scenery || targetLandscape > landscape;
+            var now = DateTime.UtcNow;
 
-            if (goingUp && DateTime.UtcNow < nextStepAt) {
+            // the last step's loading done: its time gone by, and a second without a slow frame
+            var settled = now >= nextStepAt && DrawDistanceRamp.MayStep(
+                (now - lastStepAt).TotalSeconds, (now - lastHitchAt).TotalSeconds);
+
+            if (goingUp && !settled) {
                 return (Math.Min(scenery, targetScenery), Math.Min(landscape, targetLandscape));
             }
 
@@ -56,7 +81,8 @@ namespace DaraletPlayer.Ui {
                 DrawDistanceRamp.Next(landscape, targetLandscape, DrawDistanceRamp.LandscapeStep));
 
             if (next.Item1 > scenery || next.Item2 > landscape) {
-                nextStepAt = DateTime.UtcNow.AddSeconds(DrawDistanceRamp.StepSeconds);
+                lastStepAt = now;
+                nextStepAt = now.AddSeconds(DrawDistanceRamp.StepSeconds);
 
                 if (next.Item1 != targetScenery || next.Item2 != targetLandscape) {
                     PluginCore.LogFile($"[draw-distance] stepping up: scenery {next.Item1} of {targetScenery}, "

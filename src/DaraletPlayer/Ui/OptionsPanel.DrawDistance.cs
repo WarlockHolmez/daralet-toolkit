@@ -12,6 +12,7 @@ namespace DaraletPlayer.Ui {
     internal sealed partial class OptionsPanel {
         private readonly DrawDistance drawDistance;
         private readonly FrameRateWindow frameRate;
+        private readonly TestRunner testRunner;
 
         /// <summary>Each draw distance slider's value while it's held: used once let go.</summary>
         private int? draggingScenery;
@@ -31,10 +32,8 @@ namespace DaraletPlayer.Ui {
 
             RenderMemoryWarning(options);
 
-            if (Form.Check("Draw further than the game allows##draw-distance-on", ref options.On, "Uses the "
-                + "settings below in place of the game's own. Off, everything is as the game has it. Drawing further "
-                + "costs frame rate and memory: try a step at a time. Changing these loads the landscape again, a "
-                + "moment's pause.")) {
+            if (Form.Check("Draw further than the game allows##draw-distance-on", ref options.On,
+                "Uses the settings below instead of the game's. Costs frame rate and memory.")) {
                 Changed();
             }
 
@@ -42,32 +41,29 @@ namespace DaraletPlayer.Ui {
                 return;
             }
 
-            Form.Label("Frame Rate", "A window of the game's frame rate: now, over the last ten seconds with its 1% "
-                + "low, a graph of the last minute, and before and after each change you make here, so you can tell "
-                + "whether a setting helps. Every second is also written to a .csv in Documents\\Decal Plugins\\"
-                + "Daralet Toolkit\\Frame Rate Logs, with the settings at the time, to look through afterwards.");
+            Form.Label("Frame Rate", "The game's frame rate, with before and after each change here. Also logged to "
+                + "Frame Rate Logs.");
             frameRate.Window.RenderCompactControls("Shows the Frame Rate window.");
 
             ImGui.BeginDisabled(!options.On);
 
-            Form.Label("Scenery", "How many landblocks out from yours have their trees, bushes and rocks, drawn in full "
-                + "detail. The game's is 1: yours and the eight round it, so past about 200 to 400 meters the land is "
-                + "bare. Each step out is many more objects to draw: 2 is 25 landblocks, 3 is 49, 5 is 121, 10 is 441, "
-                + "16 is 1,089. Past 5, lower Scenery density with it, and keep Landscape at least as far, or the "
-                + "scenery has no land to stand on. If the game runs low on memory, it's put back by itself.");
+            Form.Label("Scenery", "How many landblocks out have trees. The game's is 1. Kept 2 inside Landscape.");
             var scenery = draggingScenery ?? options.ClampedSceneryRadius;
 
+            // the setting is kept as chosen, so raising Landscape gives it back; the slider says what's used meanwhile
+            var landscapeInUse = drawDistance.LandscapeFor(options);
+            var allowed = DrawDistanceRamp.SceneryFor(scenery, landscapeInUse);
+            var sceneryFormat = scenery == DrawDistanceOptions.GameSceneryRadius ? "1 (the game's)"
+                : allowed < scenery ? $"%d ({allowed} with Landscape {landscapeInUse})" : "%d landblocks";
+
             if (DragSlider("##draw-distance-scenery", ref scenery, DrawDistanceOptions.GameSceneryRadius,
-                DrawDistanceOptions.MaxSceneryRadius, scenery == DrawDistanceOptions.GameSceneryRadius ? "1 (the game's)"
-                    : "%d landblocks", ref draggingScenery)) {
+                DrawDistanceOptions.MaxSceneryRadius, sceneryFormat, ref draggingScenery)) {
                 options.SceneryRadius = scenery;
                 Changed();
             }
 
-            Form.Label("Scenery density", "How many of the game's trees, bushes and rocks are made, as a percent: fewer "
-                + "objects is the biggest gain in frame rate, much more than plainer models. The same ones always go, "
-                + "spread evenly, and it's the same everywhere, the landblock you're in too. Buildings and other placed "
-                + "objects always stay.");
+            Form.Label("Scenery density", "The share of trees, bushes and rocks drawn. Lower is the biggest frame rate "
+                + "gain.");
             var density = draggingDensity ?? options.ClampedSceneryDensity;
 
             if (DragSlider("##draw-distance-density", ref density, DrawDistanceOptions.MinSceneryDensity, 100,
@@ -76,8 +72,7 @@ namespace DaraletPlayer.Ui {
                 Changed();
             }
 
-            Form.Label("Landscape", "How many landblocks out the land is drawn at all. The game's Landscape Draw "
-                + "Distance reaches 3, 5, 8, 11 or 15; this goes up to 24. Left at the start, the game's own is used.");
+            Form.Label("Landscape", "How many landblocks out the land is drawn. The game's goes up to 15.");
             var landscape = draggingLandscape ?? options.ClampedLandscapeRadius;
 
             if (DragSlider("##draw-distance-landscape", ref landscape, 0, DrawDistanceOptions.MaxLandscapeRadius,
@@ -87,8 +82,7 @@ namespace DaraletPlayer.Ui {
                 Changed();
             }
 
-            Form.Label("Detail", "How much further out objects keep their detail, in meters: the game's Degrade "
-                + "Distance, past what its slider allows. Left at the start, the game's own is used.");
+            Form.Label("Detail", "How far out objects keep their finest model. Costly when raised.");
             var detail = draggingDetail ?? options.ClampedDetailDistance;
 
             if (DragSlider("##draw-distance-detail", ref detail, DrawDistanceOptions.MinDetailDistance,
@@ -97,10 +91,7 @@ namespace DaraletPlayer.Ui {
                 Changed();
             }
 
-            Form.Label("Far scenery", "How far out, in meters, trees, rocks and other objects the game would stop "
-                + "drawing are drawn with their plainest model instead. Much cheaper than Detail, which draws everything "
-                + "out to its distance in finer models: leave Detail at the game's and raise this with Scenery. Left at "
-                + "the start, the game hides them as ever.");
+            Form.Label("Far scenery", "How far out trees stay drawn, in their plainest model, instead of vanishing.");
             var far = draggingFar ?? options.ClampedLowDetailDistance;
 
             if (DragSlider("##draw-distance-far", ref far, 0, DrawDistanceOptions.MaxLowDetailDistance,
@@ -133,8 +124,7 @@ namespace DaraletPlayer.Ui {
                 var label = $"Back to scenery {scenery} at {density}%"
                     + (landscape > 0 ? $", landscape {landscape}" : "") + "##draw-distance-fallback";
 
-                if (Form.FlowSmallButton(ref first, label, "Sets Scenery, Scenery density and Landscape back to the "
-                    + "last settings that loaded before these, and loads the landscape again.")) {
+                if (Form.FlowSmallButton(ref first, label, "Back to the last settings that loaded.")) {
                     options.SceneryRadius = scenery;
                     options.SceneryDensity = density;
                     options.LandscapeRadius = landscape;
@@ -142,8 +132,8 @@ namespace DaraletPlayer.Ui {
                 }
             }
 
-            if (Form.FlowSmallButton(ref first, "Game's own##draw-distance-game", "Sets Scenery, Scenery density and "
-                + "Landscape back to the game's own (the other settings stay), and loads the landscape again.")) {
+            if (Form.FlowSmallButton(ref first, "Game's own##draw-distance-game",
+                "Scenery, density and Landscape back to the game's.")) {
                 options.SceneryRadius = DrawDistanceOptions.GameSceneryRadius;
                 options.SceneryDensity = 100;
                 options.LandscapeRadius = 0;
@@ -162,7 +152,7 @@ namespace DaraletPlayer.Ui {
             float width = 0) {
             ImGui.SetNextItemWidth(width > 0 ? width : Form.ControlWidth);
             Sliders.SliderInt(id, ref value, min, max, format);
-            Widgets.Tip("Used once you let go. Ctrl+click to type a number.");
+            Widgets.Tip("Ctrl+click to type a number.");
 
             if (ImGui.IsItemActive()) {
                 dragging = value;

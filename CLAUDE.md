@@ -1241,9 +1241,19 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   use; the login and teleport crashes (`0x5393E4`, `0x539153` in `make_plane`) are in the same code. Earlier, 5, 7,
   10, 15, 16 a step at a time held: each step reads only one more ring, the rest still in the game's cache. So the
   draw distance **steps up** (`Feed/DrawDistanceRamp.cs`, `Ui/DrawDistance.Ramp.cs`): 2 scenery rings and 3 landscape
-  rings a step, 4 seconds apart, down at once; at login, on any raise, and after a teleport: in portal space (Decal's
+  rings a step, each once the last has **settled** (`MayStep`: 1.5 s since it, and 1 s with no frame over 100 ms,
+  `NoteFrame` timing Decal's RenderFrame), down at once. 2 every 4 seconds held but was too slow (1 to 13 in 25 s,
+  the user's call); 3 every second crashed at login on the step from 10 to 13 (288 blocks of trees a second after
+  the last step) with the game's own "OUT OF MEMORY: Failed to allocate -1178753584 bytes", a size gone wrong with
+  2 GB free, likely a load running into the last. Behind another window every frame is slow, so stepping waits;
+  **scenery is held 2 landblocks inside the landscape**
+  (`DrawDistanceRamp.SceneryFor`, applied to the target and to each step, before the landscape loads in the same
+  pass): Landscape 24 to 10 with Scenery 10 crashed in `make_plane` (`0x539153`) with 1.7 GB free in one piece, the
+  edge blocks in full detail with no neighbour to fit their edges to (`CLandBlockStruct::AdjPlanes`, `0x5320F6`);
+  the game's own settings never do that (its least landscape is 3 with full detail out to 1). At login, on any
+  raise, and after a teleport: in portal space (Decal's
   `CharacterFilter.ChangePortalMode`) it goes back to the game's own, so the new place loads at the game's size, and
-  steps up 4 seconds after you're out. The cost loaded is what each step has loaded, so the memory estimate follows
+  steps up a second after you're out. The cost loaded is what each step has loaded, so the memory estimate follows
   the steps. `[draw-distance] stepping up` lines in log.txt. **Steps still crashed** (scenery 11 to 13 at 12%, in
   `make_plane`, 1.6 GB "free"): each step's `set_mid_radius` lets go of every block and loads them all again, and
   for a moment old and new overlap, 600 to 800 MB more than it keeps (the frame rate log's free memory showed it),
@@ -1265,9 +1275,22 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   `init_buildings` (`0x530AC0`, guarded by `+0x11C`), `init_static_objs` (`0x531780`, one argument, 0; `ret 4`;
   with objects it only refits them to the ground, `0x530C30`) and `0x5300F0` (the block's cells, once, `+0xE8`);
   the cells in sight (CEnvCell's indoor ones, `0x5301A0`) are left to the game's next change of cell. The landscape radius and Scenery
-  density still reload whole, but a **density change** first brings the scenery down to the game's in place, does
-  its reload there the next frame, with only the nine near blocks' scenery to remake, then steps up again in place
-  (the user's call, November 2026: at scenery 14 a whole reload would overlap old and new as the crashes did). Seen
+  density still reload whole: a **density change** is one whole reload with the scenery at the game's (only the
+  nine near blocks' trees to make; old big and new small, not old and new big as the crashes were), then steps up
+  again in place (the user's call, November 2026). **Only raising is done in place; lowering the scenery reloads
+  whole.** The first density build brought the scenery down in place and reloaded the next frame: the game then
+  drew next to nothing (120 to 140 fps, a black screen), the steps back up made trees for 0 blocks, and it crashed
+  in `make_plane` (`0x539153`) a minute later; the same change straight after a plugin reload, with the scenery
+  already at the game's, had worked. **The single reload went black too** (density 11% to 12% at scenery 13): the
+  steps back up made trees for 0, 0, 0, 0, 16 and 55 blocks where a fresh landscape gave 40, 72, 104, 136, 168, 199,
+  so after a whole reload down from a big radius most blocks came back already counting objects (`+0x104`), and
+  were skipped. The reading (not confirmed): the game keeps blocks it has used, and a full-detail one comes back
+  holding its released objects; after two reloads (a plugin reload then the density's) it was clean. So before
+  stepping up the plugin counts blocks outside the full-detail ring that hold objects (`CountStaleBlocks`, by
+  where they sit in the grid: the first build judged by the block's own detail and found none while 0 trees were
+  made, so stale blocks still say they're full detail; never so in the
+  game's own running), logs them, reloads whole once more if any, and if they're still there holds the scenery
+  where it is (`StaleBlocksStopStep`, `[draw-distance] ... still hold objects` lines). Seen
   at scenery 14, 12%: 1.3 GB free in one piece of 1.15 GB, so the address space isn't in pieces, and the device
   stayed fine. Tried in the game: login to scenery 14 at 12% stepped up with four short hangs (0.3 s
   each) and no crash, free memory going down steadily with no spikes. **The flat 9 fps stretches** (110 ms every
@@ -2184,8 +2207,22 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   with the plugin, after v0.6.0: older plugins still ask the old address, which GitHub redirects (the API too), and
   their Update link falls back to their own `LatestPageUrl`, since a release page under the new name isn't one of theirs. No Decal plugin known (October 2026) downloads and installs its own updates; UtilityBelt's
   is a notice like this one, and the loader updating the plugin itself was left for later.
+- **Test runs in the game** (`Ui/TestRunner.cs`, `Feed/TestScript.cs`; the user's call, November 2026, so Claude can
+  check a build without the user at the keyboard): the user launches once from ShadowLauncher (in `Program Files
+  (x86)\ShadowLauncher`, settings in `%LOCALAPPDATA%\ShadowLauncher`) with a default character set for the account
+  and server (ShadowFilter then logs straight in) and **Auto relaunch** ticked (it starts the game again whenever a
+  game it launched exits, crash or not, after a delay). Builds land by the loader's hot reload (build into `bin`).
+  A script in `Test Runs\run.txt` (steps `set on|scenery|density|landscape|detail|far N`, `settle S`, `wait S`,
+  `measure S`, `chat text`, `log text`, `restart`; `#` comments) runs once logged in, a step at a time; each step's
+  outcome goes in `Test Runs\results.txt`, timed. `progress.txt` holds the step running: found at login, the game
+  died on it, which is reported and the script dropped. `restart` writes the remaining steps back to `run.txt` and
+  exits the game (`ClientMenu.ExitGame`), so they run after the relaunch: use it every ten or so builds (each hot
+  reload stays in memory). Claude can't press ShadowLauncher's buttons: the game is set to run as administrator
+  (`RUNASADMIN` on `acclient.exe`), so the launcher's window is closed to UI Automation from an ordinary process;
+  ShadowLauncher takes no command line and builds the game's command line with the password itself, which Claude
+  must never handle. Crashes are read from the Application event log as ever. Untested in the game when written.
 - **Everything the plugin writes** goes in `Documents\Decal Plugins\Daralet Toolkit` (`DataFolder`): `settings.json`,
-  `profiles.json`, `Settings Profiles`, `Settings Exports`, `log.txt`, `Loot Profiles`, `Hotbar Layouts`, `Combat Logs`, `Chat Logs`, `Frame Rate Logs`, `world-data`. It was `Decal Plugins\Daralet` before the rename: `PluginCore.Startup` moves
+  `profiles.json`, `Settings Profiles`, `Settings Exports`, `log.txt`, `Loot Profiles`, `Hotbar Layouts`, `Combat Logs`, `Chat Logs`, `Frame Rate Logs`, `Test Runs`, `world-data`. It was `Decal Plugins\Daralet` before the rename: `PluginCore.Startup` moves
   that folder over first thing (`DataFolder.MoveOldFolder`, `FolderMove.Once`, copying instead if a file's held open),
   unless the new one is already there. Only startup does it, so a test that asks `DataFolder` for a path doesn't move
   the developer's real folder. Only files a player drops in by hand (`dereth-map.png`, `locations.xml`) are looked for

@@ -45,6 +45,7 @@ namespace DaraletPlayer.Ui {
             // works whether or not this window replaces the game's panel: its settings are only drawn here
             drawDistance = new DrawDistance(settings);
             frameRate = new FrameRateWindow(settings);
+            testRunner = new TestRunner(settings, drawDistance, Changed);
             CoreManager.Current.RenderFrame += Core_RenderFrame;
         }
 
@@ -156,6 +157,7 @@ namespace DaraletPlayer.Ui {
             }
 
             try {
+                testRunner.Dispose();
                 frameRate.Dispose();
             }
             catch (Exception ex) {

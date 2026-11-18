@@ -56,6 +56,12 @@ namespace DaraletPlayer.Ui {
 
         public FloatingWindow Window => window;
 
+        /// <summary>The last so many seconds of frames, for a test run's measure; null with no window running.</summary>
+        public static FrameSummary Recent(double seconds) {
+            var running = current;
+            return running == null || running.disposed ? null : running.stats.Last(running.Now, seconds);
+        }
+
         /// <summary>Notes a change on the graph, to compare the frame rate before and after it.</summary>
         public static void Mark(string label) {
             var running = current;

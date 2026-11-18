@@ -18,8 +18,24 @@ namespace DaraletPlayer.Tests {
         }
 
         [TestMethod]
+        public void StepsOnlyOnceTheLastHasSettled() {
+            Assert.IsFalse(DrawDistanceRamp.MayStep(1, 5), "too soon after the last step");
+            Assert.IsFalse(DrawDistanceRamp.MayStep(5, 0.5), "still loading: a slow frame half a second ago");
+            Assert.IsTrue(DrawDistanceRamp.MayStep(1.5, 1));
+        }
+
+        [TestMethod]
         public void GoesDownAllAtOnce() {
             Assert.AreEqual(1, DrawDistanceRamp.Next(16, 1, DrawDistanceRamp.SceneryStep));
+        }
+
+        [TestMethod]
+        public void SceneryStaysTwoInsideTheLandscape() {
+            // landscape 10 with scenery 14 crashed the game: the edge blocks in full detail
+            Assert.AreEqual(8, DrawDistanceRamp.SceneryFor(14, 10));
+            Assert.AreEqual(14, DrawDistanceRamp.SceneryFor(14, 24));
+            Assert.AreEqual(1, DrawDistanceRamp.SceneryFor(5, 3));
+            Assert.AreEqual(1, DrawDistanceRamp.SceneryFor(1, 1));
         }
 
         [TestMethod]

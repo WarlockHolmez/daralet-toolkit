@@ -59,7 +59,9 @@ namespace DaraletPlayer.Ui {
         [UnmanagedFunctionPointer(CallingConvention.ThisCall)]
         private delegate void SightUpdateCall(IntPtr lscape, uint sight, int blockChanged);
 
-        /// <summary>Every block's detail checked again where it is, as the game does on entering another landblock.</summary>
+        /// <summary>
+        /// Every block's detail checked again where it is, as the game does on entering another landblock.
+        /// </summary>
         private static unsafe void RefreshBlocks(IntPtr lscape) {
             var loadPoint = *(uint*)((byte*)lscape + LScapeLoadPoint);
 
@@ -75,6 +77,100 @@ namespace DaraletPlayer.Ui {
             Marshal.GetDelegateForFunctionPointer<SightUpdateCall>((IntPtr)SightUpdateAddress)(lscape, sight, 0);
 
             MakeBlocksObjects(lscape);
+        }
+
+        /// <summary>Whether a whole reload has been done for stale blocks since the last clean step up.</summary>
+        private bool staleReloadTried;
+
+        /// <summary>Set when a whole reload for stale blocks is to be done this pass.</summary>
+        private bool staleReloadNow;
+
+        private bool staleHoldLogged;
+
+        /// <summary>
+        /// Whether stale blocks (CountStaleBlocks) keep the scenery from stepping up this pass: the first time, a whole
+        /// reload is asked for (staleReloadNow) and the step waits for it; still there after that, the scenery is held
+        /// where it is (a black screen and a crash being the alternative), logged once.
+        /// </summary>
+        private bool StaleBlocksStopStep(IntPtr lscape) {
+            var stale = CountStaleBlocks(lscape, patchedRadius);
+
+            if (stale == 0) {
+                staleReloadTried = false;
+                staleHoldLogged = false;
+                return false;
+            }
+
+            if (!staleReloadTried) {
+                staleReloadTried = true;
+                staleReloadNow = true;
+                nextStepAt = DateTime.UtcNow.AddSeconds(DrawDistanceRamp.StepSeconds);
+                PluginCore.LogFile($"[draw-distance] {stale} blocks outside the full-detail ring still hold objects: the "
+                    + "landscape loaded again before stepping up");
+                return true;
+            }
+
+            if (!staleHoldLogged) {
+                staleHoldLogged = true;
+                PluginCore.LogFile($"[draw-distance] {stale} blocks still hold objects after loading again: the scenery "
+                    + $"stays at {patchedRadius} rather than step up onto them");
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Blocks outside the full-detail ring that still hold objects: never so in the game's own running (a block
+        /// leaving full detail has its objects destroyed, notify_change_size at 0x507525). Seen after a whole reload down from a big
+        /// scenery radius (November 2026): stepping back up then found most blocks already "with" objects and made trees
+        /// for none of them, the game drew next to nothing (a black screen at 120 fps) and crashed in make_plane. The
+        /// game seems to keep blocks it has used, and a full-detail one came back holding its old, released objects;
+        /// after a second whole reload (a plugin reload's) it was clean. So the count is logged before stepping up, and
+        /// any found get another whole reload first (Apply).
+        /// </summary>
+        private static unsafe int CountStaleBlocks(IntPtr lscape, int fullRadius) {
+            var width = *(int*)((byte*)lscape + LScapeWidth);
+            var blocks = *(IntPtr**)((byte*)lscape + LScapeBlocks);
+
+            if (blocks == null || width <= 0 || width > 2 * DrawDistanceOptions.MaxLandscapeRadius + 1) {
+                return 0;
+            }
+
+            // judged by where a block is, not by what it says of itself: the first build counted blocks out of full
+            // detail with objects and found none, while stepping up still made trees for 0 blocks, so the stale ones
+            // still say they're in full detail. Outside the full-detail ring (the grid's middle is the load point's
+            // block) a block should hold no objects at all
+            var middle = width / 2;
+            var stale = 0;
+            var full = 0;
+            var holding = 0;
+
+            for (var i = 0; i < width * width; i++) {
+                var block = blocks[i];
+
+                if (block == IntPtr.Zero) {
+                    continue;
+                }
+
+                var ring = Math.Max(Math.Abs(i % width - middle), Math.Abs(i / width - middle));
+                var objects = *(int*)((byte*)block + BlockStaticCount) != 0;
+
+                if (*(int*)((byte*)block + BlockSideCells) == 8) {
+                    full++;
+                }
+
+                if (objects) {
+                    holding++;
+                }
+
+                if (objects && ring > fullRadius) {
+                    stale++;
+                }
+            }
+
+            PluginCore.LogFile($"[draw-distance] blocks before stepping up from scenery {fullRadius}: {full} in full "
+                + $"detail, {holding} holding objects, {stale} of those outside the full-detail ring");
+            return stale;
         }
 
         /// <summary>

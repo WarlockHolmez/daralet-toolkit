@@ -69,6 +69,20 @@ namespace DaraletPlayer.Ui {
 
         /// <summary>Why it can't be used on this client, or null.</summary>
         /// <summary>Why it can't be used at all on this client, or null.</summary>
+        /// <summary>
+        /// Whether the draw distance has reached what's set, as of the last look (a second at most): no step up still to
+        /// come. For a test run's settle (Ui/TestRunner.cs).
+        /// </summary>
+        public bool AtTarget { get; private set; }
+
+        /// <summary>The scenery and landscape radius loaded as of the last look, for a test run's results.</summary>
+        public string Loaded => $"scenery {patchedRadius} at {appliedDensity}%";
+
+        /// <summary>The landscape radius these settings load: theirs, else the game's Landscape Draw Distance.</summary>
+        public unsafe int LandscapeFor(DrawDistanceOptions options) {
+            return options.ClampedLandscapeRadius > 0 ? options.ClampedLandscapeRadius : *(int*)GameLandscapeRadius;
+        }
+
         public string Problem => broken ? "This client isn't the one the draw distance was worked out for: it's left alone."
             : null;
 
@@ -90,6 +104,8 @@ namespace DaraletPlayer.Ui {
                 if (disposed) {
                     return;
                 }
+
+                NoteFrame();
 
                 if (DateTime.UtcNow < nextLook || CoreManager.Current.CharacterFilter.LoginStatus != 3) {
                     return;
@@ -123,7 +139,9 @@ namespace DaraletPlayer.Ui {
             var far = on && !LowOnMemory(on, wanted);
 
             if (far && !MayLoad(wanted)) {
-                // too little memory to draw further: what's loaded stays as it is, and the rest still applies
+                // too little memory to draw further: what's loaded stays as it is, and the rest still applies; as far
+                // as it'll go, so a test run's settle doesn't wait for what won't come
+                AtTarget = true;
                 ApplyDetail(options.ClampedDetailDistance);
                 ApplyLowDetail(options.ClampedLowDetailDistance);
                 return;
@@ -139,18 +157,33 @@ namespace DaraletPlayer.Ui {
             var wantedDensity = far ? options.ClampedSceneryDensity : 100;
 
             // a density change remakes every block's scenery, which only a whole reload does, and a whole reload with
-            // far scenery loaded overlaps old and new for a moment, which crashed the game: so the scenery first goes
-            // down to the game's in place, the reload is done there, and then it steps up again (the user's call,
-            // November 2026)
+            // far scenery wanted overlaps old and new big, which crashed the game: so the reload is done with the
+            // scenery at the game's (only the nine near blocks' trees), and then it steps up again in place (the user's
+            // call, November 2026)
             var densityChanging = wantedDensity != appliedDensity;
             var targetScenery = aiming && !densityChanging ? options.ClampedSceneryRadius
                 : DrawDistanceOptions.GameSceneryRadius;
             var targetLandscape = aiming ? wantedLandscape : gameLandscape;
             var loadedLandscape = lscape != IntPtr.Zero ? *(int*)lscape : targetLandscape;
+
+            // the most the landscape wanted allows, so stepping up aims no higher
+            targetScenery = DrawDistanceRamp.SceneryFor(targetScenery, targetLandscape);
             var (scenery, landscape) = NextStep(patchedRadius, targetScenery, loadedLandscape, targetLandscape);
 
-            // the scenery comes down in place this pass, and the density's reload waits for the next
-            var sceneryWasUp = patchedRadius > DrawDistanceOptions.GameSceneryRadius;
+            // the landscape's outer rings never in full detail, as the game has it: past its edge a full-detail block
+            // has no neighbour to fit its edges to (DrawDistanceRamp.SceneryInsideLandscape); held before the landscape
+            // loads, in this same pass
+            scenery = DrawDistanceRamp.SceneryFor(scenery, landscape);
+
+            // never step up in place onto blocks still holding objects they shouldn't (CountStaleBlocks)
+            if (scenery > patchedRadius && lscape != IntPtr.Zero && !broken && StaleBlocksStopStep(lscape)) {
+                scenery = patchedRadius;
+                reload |= staleReloadNow;
+                staleReloadNow = false;
+            }
+
+            // there once this pass is done, with nothing still to step up to and no density change waiting
+            AtTarget = scenery == targetScenery && landscape == targetLandscape && !densityChanging;
 
             if (scenery != patchedRadius && !broken) {
                 if (!PatchRings(scenery)) {
@@ -159,18 +192,23 @@ namespace DaraletPlayer.Ui {
 
                 PluginCore.LogFile($"[draw-distance] scenery radius {patchedRadius} -> {scenery}"
                     + $" ({FreeMegabytes()} MB free)");
+
+                // up, the new rings are made in place (a whole reload overlaps old and new, which crashed the game);
+                // down, the whole landscape is loaded again, old big and new small: brought down in place and then
+                // reloaded for a density change, the game drew next to nothing (120 fps, a black screen), made no
+                // trees for the blocks stepped up again, and crashed in make_plane (0x539153), November 2026
+                if (scenery > patchedRadius) {
+                    ringsChanged = true;
+                }
+                else {
+                    reload = true;
+                }
+
                 patchedRadius = scenery;
-                ringsChanged = true;
             }
 
-            if (densityChanging && sceneryWasUp) {
-                PluginCore.LogFile($"[draw-distance] scenery density {appliedDensity}% -> {wantedDensity}% waits for the "
-                    + "scenery to come down first");
-
-                // the next frame, not a second from now: the scenery's already down (not Soon, which lifts a memory cap)
-                nextLook = DateTime.MinValue;
-            }
-            else if (ApplyDensity(wantedDensity)) {
+            // a density change comes with the scenery going down to the game's (targetScenery), in the same reload
+            if (ApplyDensity(wantedDensity)) {
                 reload = true;
 
                 // the scenery steps up again from here, after the reload's had its time
