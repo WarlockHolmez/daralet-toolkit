@@ -104,7 +104,7 @@ namespace DaraletPlayer.Ui {
                 ImGui.OpenPopup("chat-options");
             }
             Widgets.Tip($"{window.Name}'s options: what it shows, who typing in it goes to, its text size, and more. "
-                + "The Chat tab of the /dap window has the rest (fonts, colours, times).");
+                + "The Config tab's Chat, in the /dap window, has the rest (fonts, colours, times).");
         }
 
         /// <summary>What the talk button says, and its tooltip.</summary>

@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Runtime.Serialization;
 
 namespace DaraletPlayer.Feed {
-    /// <summary>The plugin's chat windows (the Chat tab), in settings.json as "chat".</summary>
+    /// <summary>The plugin's chat windows (the Config tab's Chat), in settings.json as "chat".</summary>
     [DataContract]
     public class ChatSettings {
         /// <summary>The main window and the four others.</summary>

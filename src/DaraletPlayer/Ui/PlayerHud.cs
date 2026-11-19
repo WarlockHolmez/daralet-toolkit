@@ -35,7 +35,6 @@ namespace DaraletPlayer.Ui {
         private AppraisalGroup appraisalGroup;
         private readonly GameHotbar gameHotbar;
         private readonly GamePanels gamePanels;
-        private readonly ToolbarButtons toolbarButtons;
         private readonly HideGameUi hideGameUi;
         private readonly EscapeCloses escapeCloses;
         private readonly WorldAppraise worldAppraise;
@@ -44,9 +43,15 @@ namespace DaraletPlayer.Ui {
         private readonly MarketApi api = new MarketApi();
 
         /// <summary>
-        /// The tabs in the order they're shown, by name, tooltip and what draws them.
+        /// The tabs in the order they're shown, by name, picture, tooltip and what draws them.
         /// </summary>
-        private readonly List<(string Name, string Tip, Action Render)> tabs;
+        private readonly List<(string Name, TabIcon Icon, string Tip, Action Render)> tabs;
+
+        /// <summary>The tab open last frame, by its place in tabs, ticked in the list of tabs.</summary>
+        private int openTab;
+
+        /// <summary>A tab picked from the list of tabs, opened on the next frame (-1 for none).</summary>
+        private int selectTab = -1;
 
         private bool disposed;
 
@@ -71,6 +76,7 @@ namespace DaraletPlayer.Ui {
             characterTab = new CharacterTab(feed, settings);
             questsTab = new QuestsTab(feed, settings, worldTab.GoTo);
             lootTab = new LootTab(feed, settings, icons);
+            inventoryTab.Looter = lootTab.Render;
             // the hud is made below: these read the field when called
             hideGameUi = new HideGameUi(settings, () => hud.Visible, shown => hud.Visible = shown);
             launcher = new Launcher(settings, () => hud.Visible, Toggle);
@@ -87,11 +93,9 @@ namespace DaraletPlayer.Ui {
                 ("link", "Link", gamePanels.Get<LinkPanel>().Window),
                 ("book", "Book", gamePanels.Get<BookPanel>().Window));
             configTab = new ConfigTab(settings, new ClientUiOverride(settings, feed, lootTab.CorpseWindow, sharedWindow,
-                gamePanels), hideGameUi, launcher, borderless);
+                gamePanels), chatTab, hideGameUi, launcher, borderless);
             leaderboardsTab = new LeaderboardsTab(feed, api);
-            toolbarButtons = new ToolbarButtons(settings, icons, inventoryTab.CarriedWindow, questsTab.Window,
-                worldTab.MapWindow, characterTab.Window, socialTab.Window);
-            // its buttons open these where Client UI Override's toolbar buttons say so, so it comes after them
+            // its buttons open the plugin's windows where Client UI Override's Windows row has them ticked
             var attributes = gamePanels.Get<AttributesPanel>();
             var spellbook = gamePanels.Get<SpellbookPanel>();
             var options = gamePanels.Get<OptionsPanel>();
@@ -139,37 +143,33 @@ namespace DaraletPlayer.Ui {
             RightClick.AppraisesNow = () => settings.Data.RightClickAppraises
                 && !Hotkeys.IsDown(settings.Data.MenuKey != 0 ? settings.Data.MenuKey : Keys.Alt);
 
-            tabs = new List<(string, string, Action)> {
-                ("Config", "Settings profiles: every setting of the plugin's as a set each character picks from, saved to "
-                    + "and added from files to keep or share. And Client UI Override: the game toolbar's buttons opening "
-                    + "the plugin's windows instead of the game's panels.", configTab.Render),
-                ("World", "A map of Dereth with Daralet's towns, dungeons, lifestones and portals, you and your fellowship, "
-                    + "and an arrow to point you anywhere on it.", worldTab.Render),
-                ("Social", "Your allegiance, your fellowship (its members' vitals, its buttons, a vitals window you can "
-                    + "place anywhere), Find a group (/lfgroup and /lfmore), your friends and your squelches.",
-                    socialTab.Render),
-                ("Chat", "Chat windows of the plugin's own: a main window with tabs, others popped out, each showing what you "
-                    + "pick of the game's chat, with sharp text at any size, items linked in chat, copying, and Hide game "
-                    + "chat to use them instead of the game's.", chatTab.Render),
-                ("Combat", "Your selected target's vitals, buffs, debuffs and threat table, a tracked target to watch "
-                    + "alongside it, hotbars of items to use with a click or a hotkey, and floating combat text and a "
-                    + "combat log.", combatTab.Render),
-                ("Character", "What the game's Character Information panel says (age, deaths, innate attributes, "
-                    + "augmentations, burden), your XP and rested experience (with an XP bar of its own), then your character "
-                    + "stats, as the Combat Focus appraisal shows them: gear mods, ratings, ward, armor level, resistances "
-                    + "and jewel effects.", characterTab.Render),
-                ("Quests", "Your quests, what the game's Contracts panel lists: their progress and timers, who gives them "
-                    + "and who takes them back, and where, with an arrow to point you there.", questsTab.Render),
-                ("Loot", "Loot rules in named loot profiles you can swap, and what happens when you open a corpse or a "
-                    + "chest: loot, salvage, or just show what matches.", lootTab.Render),
-                ("Inventory", "The packs you carry, your bank's packs while it's open, and every /bank command as a "
-                    + "button.", inventoryTab.Render),
-                ("Market", "Your listings, sales and expired items, the Market Broker's actions near the market stand, and "
-                    + "a search of everything on the market.", marketTab.Render),
-                ("Arena", "Your arena ratings and where you stand, the /arena commands as buttons, duels to watch, and the "
-                    + "top ratings.", arenaTab.Render),
-                ("Leaderboards", "The leaderboards from the Daralet website: level, arena, capstones, deaths and more.",
-                    leaderboardsTab.Render),
+            tabs = new List<(string, TabIcon, string, Action)> {
+                ("Config", TabIcon.Gear, "Settings profiles: every setting of the plugin's as a set each character picks "
+                    + "from, saved to and added from files to keep or share. Client UI Override: the plugin's windows "
+                    + "instead of the game's panels. And Chat: the plugin's chat windows.", configTab.Render),
+                ("World", TabIcon.Globe, "A map of Dereth with Daralet's towns, dungeons, lifestones and portals, you and "
+                    + "your fellowship, and an arrow to point you anywhere on it.", worldTab.Render),
+                ("Character", TabIcon.Person, "What the game's Character Information panel says (age, deaths, innate "
+                    + "attributes, augmentations, burden), your XP and rested experience (with an XP bar of its own), then "
+                    + "your character stats, as the Combat Focus appraisal shows them: gear mods, ratings, ward, armor "
+                    + "level, resistances and jewel effects.", characterTab.Render),
+                ("Social", TabIcon.People, "Your allegiance, your fellowship (its members' vitals, its buttons, a vitals "
+                    + "window you can place anywhere), Find a group (/lfgroup and /lfmore), your friends and your "
+                    + "squelches.", socialTab.Render),
+                ("Combat", TabIcon.Axe, "Your selected target's vitals, buffs, debuffs and threat table, a "
+                    + "tracked target to watch alongside it, hotbars of items to use with a click or a hotkey, and "
+                    + "floating combat text and a combat log.", combatTab.Render),
+                ("Inventory", TabIcon.Backpack, "The packs you carry, your bank's packs while it's open, every /bank "
+                    + "command as a button, and the looter with its loot profiles.", inventoryTab.Render),
+                ("Quests", TabIcon.Quill, "Your quests, what the game's Contracts panel lists: their progress and timers, "
+                    + "who gives them and who takes them back, and where, with an arrow to point you there.",
+                    questsTab.Render),
+                ("Market", TabIcon.CoinPurse, "Your listings, sales and expired items, the Market Broker's actions near "
+                    + "the market stand, and a search of everything on the market.", marketTab.Render),
+                ("Arena", TabIcon.CrossedSwords, "Your arena ratings and where you stand, the /arena commands as buttons, "
+                    + "duels to watch, and the top ratings.", arenaTab.Render),
+                ("Leaderboards", TabIcon.Medal, "The leaderboards from the Daralet website: level, arena, capstones, "
+                    + "deaths and more.", leaderboardsTab.Render),
             };
 
             hud = UBService.Huds.CreateHud("Daralet Toolkit");
@@ -238,12 +238,19 @@ namespace DaraletPlayer.Ui {
                     return;
                 }
 
-                // the tabs don't fit a narrow window, so they scroll, and the list button at the left jumps to any of them
-                var tabBarFlags = ImGuiTabBarFlags.FittingPolicyScroll | ImGuiTabBarFlags.TabListPopupButton;
+                // the tabs are pictures, so a dozen fit even a narrow window; with big text they shrink to fit rather
+                // than scroll, so each tab's box is where it's drawn. The list button at the left names them all: ImGui's
+                // own would show their labels, which are only spaces.
+                if (ImGui.BeginTabBar("DaraletPlayerTabs", ImGuiTabBarFlags.FittingPolicyResizeDown)) {
+                    RenderTabList();
+                    var select = selectTab;
+                    selectTab = -1;
 
-                if (ImGui.BeginTabBar("DaraletPlayerTabs", tabBarFlags)) {
-                    foreach (var (name, tip, render) in tabs) {
-                        if (Widgets.TabItem(name, tip)) {
+                    for (var i = 0; i < tabs.Count; i++) {
+                        var (name, icon, tip, render) = tabs[i];
+
+                        if (TabIcons.TabItem(icon, name, tip, select == i)) {
+                            openTab = i;
                             render();
                             ImGui.EndTabItem();
                         }
@@ -262,6 +269,38 @@ namespace DaraletPlayer.Ui {
                 // only this window has the theme: other plugins' windows keep their own look
                 UiThemeStyle.Restore();
             }
+        }
+
+        /// <summary>
+        /// The button at the left of the tab bar, like ImGui's tab list button, listing the tabs by name: a pick opens it
+        /// on the next frame.
+        /// </summary>
+        private void RenderTabList() {
+            var arrow = ImGui.GetFontSize() * 0.6f;
+            var label = new string(' ', Math.Max(1, (int)Math.Ceiling(arrow / Math.Max(1, ImGui.CalcTextSize(" ").X))));
+
+            if (ImGui.TabItemButton(label + "###tab-list", ImGuiTabItemFlags.Leading | ImGuiTabItemFlags.NoTooltip)) {
+                ImGui.OpenPopup("tab-list");
+            }
+
+            var centre = (ImGui.GetItemRectMin() + ImGui.GetItemRectMax()) / 2;
+            var half = arrow / 2;
+            ImGui.GetWindowDrawList().AddTriangleFilled(centre + new Vector2(-half, -half * 0.5f),
+                centre + new Vector2(half, -half * 0.5f), centre + new Vector2(0, half * 0.6f),
+                ImGui.GetColorU32(ImGuiCol.Text));
+            Widgets.Tip("Every tab, by name.");
+
+            if (!ImGui.BeginPopup("tab-list")) {
+                return;
+            }
+
+            for (var i = 0; i < tabs.Count; i++) {
+                if (ImGui.Selectable(tabs[i].Name, i == openTab)) {
+                    selectTab = i;
+                }
+            }
+
+            ImGui.EndPopup();
         }
 
         /// <summary>
@@ -326,26 +365,15 @@ namespace DaraletPlayer.Ui {
                 + "Your settings are kept.");
         }
 
-        /// <summary>The Plugin appraisal and Compact checkboxes, at the right of the top line.</summary>
+        /// <summary>
+        /// The Compact checkbox, at the right of the top line. Plugin appraisal was beside it until it became Client UI
+        /// Override's Item Appraisal (November 2026).
+        /// </summary>
         private void RenderCompactToggle() {
-            const string appraisal = "Plugin appraisal";
             const string label = "Compact";
-            var style = ImGui.GetStyle();
-            var box = ImGui.GetFrameHeight() + style.ItemInnerSpacing.X;
-            var width = box * 2 + ImGui.CalcTextSize(appraisal).X + style.ItemSpacing.X + ImGui.CalcTextSize(label).X;
+            var width = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemInnerSpacing.X + ImGui.CalcTextSize(label).X;
 
             ImGui.SameLine(Math.Max(ImGui.GetCursorPosX(), ImGui.GetWindowContentRegionMax().X - width));
-
-            if (ImGui.Checkbox(appraisal, ref settings.Data.AppraiseInPlugin)) {
-                settings.Changed();
-            }
-            Widgets.Tip("Appraise, in an item's right-click menu in the Corpse window or the bank, shows it in the plugin's "
-                + "Appraisal window: every stat, how well each rolled, what your loot rules make of it and how it compares "
-                + "with what you're wearing. Appraise in new window opens another, to keep several. Off, Appraise selects "
-                + "the item instead, for the game's own appraisal (press your appraise key): a plugin can't open the game's "
-                + "appraisal panel.");
-
-            ImGui.SameLine();
 
             if (ImGui.Checkbox(label, ref settings.Data.CompactLists)) {
                 settings.Changed();
@@ -383,7 +411,7 @@ namespace DaraletPlayer.Ui {
 
             // the game's UI back first, whatever fails after
             var pieces = new IDisposable[] {
-                hideGameUi, borderless, escapeCloses, worldAppraise, launcher, hud, toolbarButtons, sharedWindow, gameHotbar, gamePanels,
+                hideGameUi, borderless, escapeCloses, worldAppraise, launcher, hud, sharedWindow, gameHotbar, gamePanels,
                 chatWindows, socialTab, combatTab, worldTab, inventoryTab, questsTab, characterTab, marketTab,
                 lootTab, api, icons,
             };

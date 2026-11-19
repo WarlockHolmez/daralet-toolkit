@@ -296,7 +296,7 @@ namespace DaraletPlayer.Ui {
                 settings.Changed();
                 SnapshotSoon();
             }
-            Widgets.Tip("Highlights the items your active loot profile's rules would mark, with each rule's highlight and icon (set in the Loot tab). The server describes every item listed to check them, so a full bank takes a little while to fill in.");
+            Widgets.Tip("Highlights the items your active loot profile's rules would mark, with each rule's highlight and icon (set in the Inventory tab's Looter). The server describes every item listed to check them, so a full bank takes a little while to fill in.");
 
             // the bank's own items can't be on a hotbar: only what you carry
             if (carried || ShowsBoth) {

@@ -15,7 +15,7 @@ namespace DaraletPlayer.Ui {
     /// by whatever window draws first: with every window hidden nothing would read it, and the UI couldn't come back.
     /// </summary>
     internal sealed class HideGameUi : IDisposable {
-        /// <summary>The game's UI is hidden: ToolbarButton stays hidden while it is, having no toolbar to sit on.</summary>
+        /// <summary>The game's UI is hidden: what hides or shows the game's own pieces leaves them alone while it is.</summary>
         public static bool On { get; private set; }
 
         /// <summary>The plugin's windows are hidden with the game's UI: FloatingWindow stays hidden while they are.</summary>
@@ -206,27 +206,24 @@ namespace DaraletPlayer.Ui {
             keyWasDown = down;
         }
 
-        /// <summary>The Config tab's Hide game UI section: the key, and a button to hide it now.</summary>
-        public void Render() {
-            Form.Section("Hide game UI");
-            Form.Hint("Hides all of the game's own UI, and this plugin's windows unless Keep plugin windows is ticked, for "
-                + "screenshots. Press the key again, or type /dap showui, to bring it all back. Other plugins' windows and "
-                + "Decal's bar stay.");
-
-            if (!Form.BeginForm("hide-ui")) {
-                return;
-            }
-
-            Form.Label("Key", "Hides the UI, and shows it again. Click, then press the key (with Ctrl, Shift or Alt if you "
+        /// <summary>
+        /// The Config tab's Hide UI key row, in a form of the caller's: the key, Keep plugin windows, and Hide now. Once a
+        /// section of its own, with this explanation as a paragraph; now the row's tooltip (the user's call, November
+        /// 2026).
+        /// </summary>
+        public void RenderKeyRow() {
+            Form.Label("Hide UI key", "Hides all of the game's own UI, and this plugin's windows unless Keep plugin "
+                + "windows is ticked, for screenshots. Press the key again, or type /dap showui, to bring it all back. "
+                + "Other plugins' windows and Decal's bar stay.");
+            RenderKey();
+            Widgets.Tip("Hides the UI, and shows it again. Click, then press the key (with Ctrl, Shift or Alt if you "
                 + "like); Escape cancels, right-click clears it. The game hears it too, and ignores Ctrl and Shift on its "
                 + "own keys, so pick a key it doesn't use at all.");
-            RenderKey();
+            var first = false;
 
-            Form.Label("Plugin", "What happens to this plugin's windows while the game's UI is hidden.");
-
-            if (Form.Check("Keep plugin windows", ref settings.Data.HideUiKeepPluginWindows, "Hides only the game's own "
-                + "UI: this plugin's windows (hotbars, map, fellowship and the rest) stay, the /dap window too. Its "
-                + "toolbar buttons go with the game's toolbar, having nothing to sit on.")) {
+            if (Form.FlowCheck(ref first, "Keep plugin windows##hide-ui-keep", ref settings.Data.HideUiKeepPluginWindows,
+                "Hides only the game's own UI: this plugin's windows (hotbars, map, fellowship and the rest) stay, the "
+                + "/dap window too.")) {
                 settings.Changed();
 
                 // ticked or unticked while hidden: the /dap window follows straight away (the rest follow every frame)
@@ -235,16 +232,12 @@ namespace DaraletPlayer.Ui {
                 }
             }
 
-            Form.Label("Now", KeepPluginWindows ? "Hides it straight away." : "Hides it straight away, this window too.");
-
-            if (ImGui.Button("Hide game UI")) {
+            if (Form.FlowSmallButton(ref first, "Hide now##hide-ui-now", (KeepPluginWindows ? "Hides the game's UI "
+                + "straight away. " : "Hides the game's UI straight away, this window too. ") + (KeyLabel != null
+                ? $"{KeyLabel} or /dap showui brings it back."
+                : "/dap showui brings it back. There's no key set: type it in chat, which may be hidden too."))) {
                 Set(true);
             }
-            Widgets.Tip(KeyLabel != null
-                ? $"{KeyLabel} or /dap showui brings it back."
-                : "/dap showui brings it back. There's no key set: type it in chat, which may be hidden too.");
-
-            ImGui.EndTable();
         }
 
         private void RenderKey() {

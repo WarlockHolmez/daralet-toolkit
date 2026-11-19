@@ -124,7 +124,7 @@ namespace DaraletPlayer.Ui {
             }
 
             if (index > 0 && Form.FlowCheck(ref first, "Flash its tab##chat-flash", ref window.Flash, "Its tab in the main "
-                + "window flashes while it has lines you haven't seen (with Flash unread tabs on, in the Chat tab).")) {
+                + "window flashes while it has lines you haven't seen (with Flash unread tabs on, in the Config tab's Chat).")) {
                 settings.Changed();
             }
 

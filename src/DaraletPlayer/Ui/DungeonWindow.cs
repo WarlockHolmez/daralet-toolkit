@@ -15,6 +15,11 @@ namespace DaraletPlayer.Ui {
     /// </summary>
     /// <remarks>Markers and the route are in <c>DungeonWindow.Markers.cs</c>.</remarks>
     internal partial class DungeonWindow : IDisposable {
+        private const string WindowTip = "A map of the dungeon you're in, drawn from the game's own dat files: your floor "
+            + "bright, the others dimmed, the rooms you've been in grey, with you on it, the portals, corpses, chests, NPCs "
+            + "and monsters on your floor in the rooms you've been in, and the way out. Scroll to zoom, drag to look "
+            + "around, right-click for the way anywhere. Only when needed shows it only while you're indoors.";
+
         private readonly Settings settings;
         private readonly DungeonLoader loader = new DungeonLoader();
         private readonly DungeonView view = new DungeonView();
@@ -325,27 +330,20 @@ namespace DaraletPlayer.Ui {
             CoreManager.Current.Actions.SelectItem(marker.Id);
         }
 
-        public void RenderControls() {
-            window.RenderControls("A map of the dungeon you're in, drawn from the game's own dat files: your floor bright, "
-                + "the others dimmed, the rooms you've been in grey, with you on it, the portals, corpses, chests, NPCs and "
-                + "monsters on your floor in the rooms you've been in, and the way out. Scroll to zoom, drag to look around, "
-                + "right-click for the way anywhere. Only when needed shows it only while you're indoors.");
-
-            if (!Form.BeginForm("dungeon-map-form")) {
-                return;
-            }
-
-            Form.Label("Map opacity", "How solid the map itself is drawn: its dark ground, floors and walls. Lower lets "
-                + "the game show through; the markers, you and the way stay solid. Background above only fades the "
-                + "window's box: with both at 0%, only the map's lines and markers are left over the game.");
+        /// <summary>The World tab's Dungeon window row, in a form of the caller's: its controls, then the map's opacity.</summary>
+        public void RenderRow() {
+            Form.Label("Dungeon", WindowTip);
+            window.RenderCompactControls(WindowTip);
+            var first = false;
             var percent = (int)Math.Round(Math.Max(0, Math.Min(1, settings.Data.DungeonMapOpacity)) * 100);
 
-            if (Form.Slider("##dungeon-map-opacity", ref percent, 0, 100, "%d%%")) {
+            if (Form.FlowSlider(ref first, "##dungeon-map-opacity", ref percent, 0, 100, "Map %d%%", "How solid the map "
+                + "itself is drawn: its dark ground, floors and walls. Lower lets the game show through; the markers, you "
+                + "and the way stay solid. Background only fades the window's box: with both at 0%, only the map's lines "
+                + "and markers are left over the game.")) {
                 settings.Data.DungeonMapOpacity = percent / 100f;
                 settings.Changed();
             }
-
-            ImGui.EndTable();
         }
 
         public void Dispose() {

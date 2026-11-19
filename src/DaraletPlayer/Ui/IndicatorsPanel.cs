@@ -11,7 +11,7 @@ namespace DaraletPlayer.Ui {
     /// window of its own: link status, beneficial and harmful spells on you, vitae, burden, a game of chess, and the X that
     /// logs out. Each shows what the game's own shows, read from the state the game draws it in (ClientElements.GetState:
     /// lit or dimmed, the link's four states, the burden pack's three), so nothing's worked out twice; and a click opens its
-    /// panel as the game's does (ClientElements.SetGamePanel), the burden pack the plugin's Character window where Client
+    /// panel as the game's does (ClientElements.SetGamePanel), the burden pack the plugin's Character Stats window where Client
     /// UI Override's Character is ticked. The X asks first, then logs out as the game's does (ClientToolbar.LogOut). Retail
     /// draws the game's 20-pixel icons; Modern a row of themed buttons that say the same in words.
     /// </summary>
@@ -29,7 +29,7 @@ namespace DaraletPlayer.Ui {
         private bool openLogOut;
 
         public IndicatorsPanel(Settings settings, Dictionary<string, (Func<bool>, FloatingWindow)> windows)
-            : base("indicators", "Indicators", settings, new[] { GameIndicators }, new Vector2(640, 500)) {
+            : base("indicators", "Indicator Bar", settings, new[] { GameIndicators }, new Vector2(640, 500)) {
             this.windows = new Dictionary<string, (Func<bool> Instead, FloatingWindow Window)>();
 
             foreach (var pair in windows) {

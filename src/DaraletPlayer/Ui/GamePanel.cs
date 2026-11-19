@@ -145,27 +145,34 @@ namespace DaraletPlayer.Ui {
             }
         }
 
-        /// <summary>A section of its own: Replace, the look, the window's controls, then the panel's own settings.</summary>
+        /// <summary>
+        /// A section of its own: a row with Replace and the look, a row of the window's controls, then the panel's own
+        /// settings. Two rows, where they were a checkbox, a form and the window's five lines (the user's call, November
+        /// 2026).
+        /// </summary>
         public void RenderSettings() {
             Form.Section(Name);
-            var first = true;
-            RenderReplace(ref first, "Replace the game's", "settings");
 
-            if (Form.BeginForm($"game-panel-{Key}-look")) {
-                Form.Label("Look", "Retail draws it with the game's own art; Modern with plain bars and buttons in the "
-                    + "plugin's theme (the Theme section).");
+            if (Form.BeginForm($"game-panel-{Key}-rows")) {
+                Form.Label("Panel", "Whether this window takes the game's panel's place, and how it looks: Retail draws it "
+                    + "with the game's own art, Modern with plain bars and buttons in the plugin's theme (the Config tab's "
+                    + "Look).");
+                var first = true;
+                RenderReplace(ref first, "Replace the game's", "settings");
                 var options = Options;
                 var look = options.IsRetail ? GamePanelOptions.Retail : GamePanelOptions.Modern;
+                ImGui.SameLine();
 
                 if (Form.Segmented($"game-panel-{Key}-look", Looks, ref look)) {
                     options.Look = look;
                     settings.Changed();
                 }
 
+                Form.Label("Window", WindowTip);
+                Window.RenderCompactControls(WindowTip);
                 ImGui.EndTable();
             }
 
-            Window.RenderControls(WindowTip);
             RenderOwnSettings();
         }
 

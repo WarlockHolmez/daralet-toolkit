@@ -53,11 +53,26 @@ namespace DaraletPlayer.Ui {
         /// <summary>The panels whose settings are on this tab.</summary>
         public IEnumerable<GamePanel> On(string tab) => panels.Where(p => p.SettingsTab == tab);
 
-        /// <summary>Each panel's Replace, in Client UI Override's row of checkboxes.</summary>
-        public void RenderToggles(ref bool first) {
-            foreach (var panel in panels) {
-                panel.RenderToggle(ref first);
+        /// <summary>These panels' Replace checkboxes, by key, in that order, in a row of Client UI Override's.</summary>
+        public void RenderToggles(ref bool first, IEnumerable<string> keys) {
+            foreach (var key in keys) {
+                Get(key)?.RenderToggle(ref first);
             }
+        }
+
+        /// <summary>
+        /// Every other panel's Replace checkbox: one no row of Client UI Override's names (a new panel) still shows.
+        /// Returns whether there were any.
+        /// </summary>
+        public bool RenderTogglesExcept(ref bool first, ICollection<string> keys) {
+            var any = false;
+
+            foreach (var panel in panels.Where(p => !keys.Contains(p.Key))) {
+                panel.RenderToggle(ref first);
+                any = true;
+            }
+
+            return any;
         }
 
         /// <summary>

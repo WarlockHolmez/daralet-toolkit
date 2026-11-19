@@ -162,26 +162,27 @@ namespace DaraletPlayer.Ui {
 
             using var fold = Form.Folded();
 
-            Form.Columns("target-settings-grid", RenderTargetWindowSettings, RenderTrackedWindowSettings,
-                RenderShownSettings);
+            // a row each for the two windows and what they show (the user's call, November 2026): three sections
+            // before, each window's controls five lines
+            if (!Form.BeginForm("target-settings-rows")) {
+                return;
+            }
+
+            Form.Label("Target", "A small window showing whatever you have selected, that stays on screen while you play.");
+            selectedWindow.RenderCompactControls("A small window showing whatever you have selected, that stays on "
+                + "screen while you play.");
+            Form.Label("Tracked", "A small window showing the tracked creature, wherever your selection is.");
+            trackedWindow.RenderCompactControls("A small window showing the tracked creature, wherever your selection "
+                + "is.");
+            RenderShownSettings();
+            ImGui.EndTable();
             ImGui.Spacing();
         }
 
-        private void RenderTargetWindowSettings() {
-            Form.Section("Target window");
-            selectedWindow.RenderControls("A small window showing whatever you have selected, that stays on screen while "
-                + "you play.");
-        }
-
-        private void RenderTrackedWindowSettings() {
-            Form.Section("Tracked target window");
-            trackedWindow.RenderControls("A small window showing the tracked creature, wherever your selection is.");
-        }
-
-        /// <summary>What both target windows show.</summary>
+        /// <summary>What both target windows show: their spells and threat, then their bars, a row each.</summary>
         private void RenderShownSettings() {
-            Form.Section("In the target windows");
             var data = settings.Data;
+            Form.Label("Shows", "What both target windows show besides the bars.");
             var first = true;
             var changed = Form.FlowCheck(ref first, "Debuffs", ref data.TargetShowDebuffs,
                 "Shows the harmful spells on the creature in the target windows, with the time each has left. Yours are "
@@ -191,6 +192,15 @@ namespace DaraletPlayer.Ui {
             changed |= Form.FlowCheck(ref first, "Threat", ref data.TargetShowThreat,
                 "Shows the creature's threat table in the target windows: who it wants to attack, and how much. The one "
                 + "it's attacking is the one it picked from those near the top.");
+
+            if (data.TargetShowThreat) {
+                changed |= Form.FlowSlider(ref first, "##threat-rows", ref data.ThreatRows, 1, 12, "%d threat rows",
+                    "How many rows of the threat table the target windows show. The tab shows all of them. Ctrl+click to "
+                    + "type a number.");
+            }
+
+            Form.Label("Bars", "The vital bars in both target windows.");
+            first = true;
             changed |= Form.FlowCheck(ref first, "Health##target", ref data.TargetShowHealth,
                 "Shows the creature's health in the target windows (a player's too, as a percentage).");
             changed |= Form.FlowCheck(ref first, "Stamina##target", ref data.TargetShowStamina,
@@ -202,23 +212,13 @@ namespace DaraletPlayer.Ui {
             changed |= Form.FlowCheck(ref first, "Retail bars##target", ref data.RetailVitalBars, Widgets.RetailBarsTip);
             changed |= Form.FlowCheck(ref first, "Bold numbers##target", ref data.BoldVitalText, Widgets.BoldVitalsTip);
 
-            if (Form.BeginForm("target-bars")) {
-                Form.Label("Bar width", "How wide each vital bar is in the target windows, which grow or shrink to fit. "
-                    + "Each window's Size makes everything bigger, bars included.");
-                var width = data.TargetBarWidth;
+            var width = data.TargetBarWidth;
 
-                if (Form.Slider("##target-bar-width", ref width, MinBarWidth, MaxBarWidth, "%d px")) {
-                    data.TargetBarWidth = width;
-                    changed = true;
-                }
-
-                if (data.TargetShowThreat) {
-                    Form.Label("Threat rows", "How many rows of the threat table the target windows show. The tab shows "
-                        + "all of them.");
-                    changed |= Form.Slider("##threat-rows", ref data.ThreatRows, 1, 12, "%d");
-                }
-
-                ImGui.EndTable();
+            if (Form.FlowSlider(ref first, "##target-bar-width", ref width, MinBarWidth, MaxBarWidth, "%d px wide",
+                "How wide each vital bar is in the target windows, which grow or shrink to fit. Each window's Size makes "
+                + "everything bigger, bars included. Ctrl+click to type a number.")) {
+                data.TargetBarWidth = width;
+                changed = true;
             }
 
             if (changed) {

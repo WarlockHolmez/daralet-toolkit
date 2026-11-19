@@ -162,23 +162,24 @@ namespace DaraletPlayer.Ui {
 
         protected override void RenderOwnSettings() {
             var data = Data;
-            var first = true;
             var changed = false;
 
-            changed |= Form.FlowCheck(ref first, "Health##vitals", ref data.ShowHealth, "Shows your health bar.");
-            changed |= Form.FlowCheck(ref first, "Stamina##vitals", ref data.ShowStamina, "Shows your stamina bar.");
-            changed |= Form.FlowCheck(ref first, "Mana##vitals", ref data.ShowMana, "Shows your mana bar.");
-            changed |= Form.FlowCheck(ref first, "Side by side##vitals", ref data.SideBySide,
-                "Puts the bars in a row, rather than one under another as the game has them.");
-            changed |= Form.FlowCheck(ref first, "Bold numbers##vitals", ref settings.Data.BoldVitalText,
-                Widgets.BoldVitalsTip);
-
+            // in rows beside the panel's own (GamePanel.RenderSettings), the bar width a short slider among the bars
             if (Form.BeginForm("vitals-form")) {
-                Form.Label("Bar width", "How wide each bar is, in pixels at 100% text. The game's are 150.");
+                Form.Label("Bars", "Which of your bars show, and how.");
+                var first = true;
+                changed |= Form.FlowCheck(ref first, "Health##vitals", ref data.ShowHealth, "Shows your health bar.");
+                changed |= Form.FlowCheck(ref first, "Stamina##vitals", ref data.ShowStamina, "Shows your stamina bar.");
+                changed |= Form.FlowCheck(ref first, "Mana##vitals", ref data.ShowMana, "Shows your mana bar.");
+                changed |= Form.FlowCheck(ref first, "Side by side##vitals", ref data.SideBySide,
+                    "Puts the bars in a row, rather than one under another as the game has them.");
+                changed |= Form.FlowCheck(ref first, "Bold numbers##vitals", ref settings.Data.BoldVitalText,
+                    Widgets.BoldVitalsTip);
                 var width = data.ClampedBarWidth;
 
-                if (Form.Slider("##vitals-bar-width", ref width, VitalsOptions.MinBarWidth, VitalsOptions.MaxBarWidth,
-                    "%d px")) {
+                if (Form.FlowSlider(ref first, "##vitals-bar-width", ref width, VitalsOptions.MinBarWidth,
+                    VitalsOptions.MaxBarWidth, "%d px wide", "How wide each bar is, in pixels at 100% text. The game's "
+                    + "are 150. Ctrl+click to type a number.")) {
                     data.BarWidth = width;
                     changed = true;
                 }

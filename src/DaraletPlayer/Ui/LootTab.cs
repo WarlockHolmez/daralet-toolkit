@@ -10,8 +10,8 @@ using ImGuiNET;
 
 namespace DaraletPlayer.Ui {
     /// <summary>
-    /// The Loot tab: the looter's switch and mode, the loot profiles (players' name for LootList), the rule editor, a test
-    /// against your own packs, and the Corpse window.
+    /// The Inventory tab's Looter sub tab (the Loot tab until November 2026): the looter's switch and mode, the loot
+    /// profiles (players' name for LootList), the rule editor, and the Corpse window.
     /// </summary>
     /// <remarks>Split across files: <c>.Rules</c> (the rule editor) and <c>.Corpse</c> (the Corpse window).</remarks>
     internal partial class LootTab : IDisposable {
@@ -41,8 +41,6 @@ namespace DaraletPlayer.Ui {
         /// <summary>The profile files From file found when it was pressed.</summary>
         private List<string> profileFiles = new List<string>();
 
-        private List<uint> testGuids = new List<uint>();
-
         /// <summary>Item details' Text size while its slider is held: only used once it's let go, as the Config tab's.</summary>
         private int itemTextPercent = 100;
         private bool itemTextSliderActive;
@@ -65,7 +63,7 @@ namespace DaraletPlayer.Ui {
 
         public void Render() {
             if (!feed.Supports(PlayerFeed.KindCorpse)) {
-                Widgets.TextColored(Colors.Warning, "This server is too old for the Loot tab.");
+                Widgets.TextColored(Colors.Warning, "This server is too old for the looter.");
                 return;
             }
 
@@ -74,21 +72,10 @@ namespace DaraletPlayer.Ui {
             RenderListControls();
             ImGui.Spacing();
 
-            if (!ImGui.BeginTabBar("loot-tabs")) {
-                return;
-            }
-
-            if (Widgets.TabItem("Rules", "The active loot profile's rules, checked top to bottom: the first that matches an item decides.")) {
-                RenderRules();
-                ImGui.EndTabItem();
-            }
-
-            if (Widgets.TabItem("Test", "What the active loot profile would do with the items you carry, to check it before trusting it with corpses.")) {
-                RenderTest();
-                ImGui.EndTabItem();
-            }
-
-            ImGui.EndTabBar();
+            // the rules straight under the profile: a Test sub tab beside them, a list of what the profile would do with
+            // what you carry, went (the user's call, November 2026), the Inventory's Loot highlights and every item
+            // tooltip saying as much
+            RenderRules();
         }
 
         private void RenderLooterControls() {
@@ -435,73 +422,6 @@ namespace DaraletPlayer.Ui {
             active.Name = unique;
             listName = unique;
             settings.Changed();
-        }
-
-        /// <summary>Has the server describe what you carry, and shows what the active profile would do with each item.</summary>
-        private void RenderTest() {
-            if (ImGui.Button("Check my packs")) {
-                CheckMyPacks();
-            }
-            Widgets.Tip("Has the server describe everything you carry (not what you're wearing), and shows which rule each item would match.");
-
-            var described = testGuids.Where(g => feed.Described.ContainsKey(g)).Select(g => feed.Described[g]).ToList();
-
-            if (testGuids.Count > 0 && described.Count < testGuids.Count) {
-                ImGui.SameLine();
-                Widgets.TextDisabled($"{described.Count} of {testGuids.Count} described...");
-            }
-
-            var list = looter.ActiveList;
-            var decisions = described
-                .Select(i => Loot.Decide(list, i))
-                .OrderBy(d => d.Rule == null)
-                .ThenBy(d => d.Item.Name)
-                .ToList();
-
-            if (decisions.Count == 0) {
-                Widgets.TextDisabled("Nothing checked yet.");
-                return;
-            }
-
-            if (!Widgets.BeginTable("loot-test", 3, Widgets.TableFlags | ImGuiTableFlags.ScrollY)) {
-                return;
-            }
-
-            ImGui.TableSetupScrollFreeze(0, 1);
-            ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthStretch);
-            ImGui.TableSetupColumn("Would", ImGuiTableColumnFlags.WidthFixed, Widgets.Scaled(70));
-            ImGui.TableSetupColumn("Rule", ImGuiTableColumnFlags.WidthFixed, Widgets.Scaled(160));
-            ImGui.TableHeadersRow();
-
-            foreach (var decision in decisions) {
-                ImGui.TableNextRow();
-                ImGui.TableNextColumn();
-                var iconHovered = icons.Draw(ItemIcons.Of(decision.Item.Guid, decision.Item.Item), decision.Rule);
-                Widgets.Text(decision.Item.Name ?? "");
-                ShowTooltip(decision.Item, iconHovered);
-
-                ImGui.TableNextColumn();
-                OutcomeText(decision, ifNone: "leave");
-
-                ImGui.TableNextColumn();
-                Widgets.TextDisabled(decision.Rule?.Name ?? "");
-            }
-
-            Widgets.EndScrollingTable();
-        }
-
-        private void CheckMyPacks() {
-            testGuids = CoreManager.Current.WorldFilter.GetInventory().Cast<WorldObject>()
-                .Where(o => o.ObjectClass != ObjectClass.Container && o.Values(LongValueKey.EquippedSlots, 0) == 0)
-                .Select(o => unchecked((uint)o.Id))
-                .ToList();
-
-            // fresh descriptions, in case something's been tinkered since
-            feed.ClearDescriptions();
-
-            foreach (var guid in testGuids) {
-                feed.Describe(guid);
-            }
         }
 
         /// <summary>The decision's outcome in its colour, or ifNone greyed when no rule matched.</summary>

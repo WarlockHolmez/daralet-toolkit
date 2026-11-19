@@ -78,8 +78,8 @@ namespace DaraletPlayer.Ui {
             var select = openFindGroup;
             openFindGroup = false;
 
-            if (Widgets.TabItem("Find a group", "Look for a group, or for more players for your fellowship, and see who else "
-                + "is looking: /lfgroup and /lfmore as a form.", select)) {
+            if (TabIcons.TabItemWithName(TabIcon.CaveEntrance, "Find a group", "Look for a group, or for more players for "
+                + "your fellowship, and see who else is looking: /lfgroup and /lfmore as a form.", select)) {
                 findGroup.Render();
                 ImGui.EndTabItem();
             }

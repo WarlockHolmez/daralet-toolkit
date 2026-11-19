@@ -9,8 +9,8 @@ using ImGuiNET;
 
 namespace DaraletPlayer.Ui {
     /// <summary>
-    /// Appraising an item, from its right-click menu in the plugin's item lists (the Corpse window, the bank). With Plugin
-    /// appraisal on (SettingsData.AppraiseInPlugin), the plugin's Appraisal windows show it: Appraise in the first, Appraise in
+    /// Appraising an item, from its right-click menu in the plugin's item lists (the Corpse window, the bank). With Item
+    /// Appraisal on (SettingsData.AppraiseInPlugin), the plugin's Appraisal windows show it: Appraise in the first, Appraise in
     /// new window in another, so several can be open at once. Otherwise the game's own appraisal panel opens, through the
     /// client's own notice, as its magnifier does (ClientToolbar.Examine: Decal's RequestId only sends the request, and the
     /// client shows only appraisals it started); if that can't be called, the item is selected for the game's appraise key.
@@ -63,7 +63,7 @@ namespace DaraletPlayer.Ui {
             icons = null;
         }
 
-        /// <summary>Whether items are appraised in the plugin's Appraisal window (Plugin appraisal), not the game's panel.</summary>
+        /// <summary>Whether items are appraised in the plugin's Appraisal window (Item Appraisal), not the game's panel.</summary>
         public static bool InPlugin => settings?.Data.AppraiseInPlugin != false && feed != null;
 
         /// <summary>
@@ -105,8 +105,8 @@ namespace DaraletPlayer.Ui {
 
             // someone else's item, linked in chat: there's nothing in the world to select for the game's appraisal
             if (linkedBy != null) {
-                PluginCore.Chat("Plugin appraisal is off, so a linked item shows only when hovered. (Plugin appraisal is on "
-                    + "the Daralet Toolkit window's top line.)");
+                PluginCore.Chat("Item Appraisal is off, so a linked item shows only when hovered. (Item Appraisal is in "
+                    + "the Config tab's Client UI Override.)");
                 return;
             }
 
@@ -121,7 +121,7 @@ namespace DaraletPlayer.Ui {
             if (!hinted) {
                 hinted = true;
                 PluginCore.Chat("Selected it: press your appraise key for the game's appraisal. "
-                    + "(Plugin appraisal, on the Daralet Toolkit window's top line, shows it in the plugin instead.)");
+                    + "(Item Appraisal, in the Config tab's Client UI Override, shows it in the plugin instead.)");
             }
         }
 
@@ -191,7 +191,7 @@ namespace DaraletPlayer.Ui {
 
         /// <summary>
         /// The Appraise items of an item's right-click menu, inside a menu already begun (ImGui.BeginPopup...): Appraise, and
-        /// Appraise in new window with Plugin appraisal on.
+        /// Appraise in new window with Item Appraisal on.
         /// </summary>
         /// <param name="slots">Where it's worn, for an item Decal can't say of (a vendor's): the compare goes by it.</param>
         public static void MenuItems(uint guid, CorpseItemInfo described = null, int slots = 0) {
