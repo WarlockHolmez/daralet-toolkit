@@ -93,6 +93,7 @@ namespace DaraletPlayer.Ui {
                 }
 
                 lastFrame = now;
+                SampleMemory(now);
                 WriteLog(now);
             }
             catch (Exception ex) {
@@ -117,6 +118,7 @@ namespace DaraletPlayer.Ui {
 
             DrawGraph(now);
             RenderCompare(now);
+            RenderMemory(now);
 
             var first = true;
 
@@ -127,8 +129,10 @@ namespace DaraletPlayer.Ui {
                 MarkNow($"Mark {markCount}");
             }
 
-            if (Form.FlowSmallButton(ref first, "Clear##frame-rate-clear", "Forgets every frame and mark so far.")) {
+            if (Form.FlowSmallButton(ref first, "Clear##frame-rate-clear", "Forgets every frame, mark and memory "
+                + "reading so far.")) {
                 stats.Clear();
+                memory.Clear();
             }
         }
 
@@ -262,7 +266,8 @@ namespace DaraletPlayer.Ui {
                 var at = DateTime.Now;
                 var free = DrawDistance.FreeMegabytes();
                 var lines = new List<string> {
-                    FrameRateLog.Second(at, stats.Last(now, 1), free, settings.Data.DrawDistance.Summary()),
+                    FrameRateLog.Second(at, stats.Last(now, 1), free, settings.Data.DrawDistance.Summary(),
+                        memory.Latest),
                 };
 
                 for (var i = logChanges.Count - 1; i >= 0; i--) {

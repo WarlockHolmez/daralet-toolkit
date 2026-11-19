@@ -159,6 +159,16 @@ dotnet test tests/DaraletPlayer.Tests/DaraletPlayer.Tests.csproj
   cdecl (`FloatingWindow.SetSizeConstraints`), and check any other ImGui.NET callback type the same way first.
 - **Every Decal event handler and render callback is wrapped in try/catch.** An exception escaping into Decal can crash the
   client.
+- **MSBuild takes a dotted name for a language.** `shading.ps.cso` went into a satellite `ps\DaraletToolkit.resources.dll`
+  (Pashto) instead of the plugin, and `GetManifestResourceStream` found nothing: embedded resources whose names have
+  a second dot need `WithCulture="false"` (the shaders' item in the csproj).
+- **Never keep a Direct3D state block from one frame to the next.** Direct3D 9 won't reset the device while one lives,
+  and the game resets it on exiting (and on alt-tab in full screen): the billboards' kept one hung the game on a
+  restart (November 2026), its last frame the moment the exit began, and nothing outside could end it (the game runs
+  as administrator). The billboards and the depth shading make theirs each frame and let it go after (`savedState`),
+  and anything in the default pool goes on UtilityBelt's `OnDestroyTextures` (see Shading from depth). A borderless
+  window never resets, which is why it went unseen. The test step `kill` ends the game from inside, for one that's
+  stuck but still drawing; a frozen one has to be closed by hand.
 - **JSON:** System.Text.Json writes dictionaries as objects; `DataContractJsonSerializer` only reads them with
   `UseSimpleDictionaryFormat = true` (see `Feed/Json.cs`).
 
@@ -1224,7 +1234,7 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   that failed (the client never checks them; not confirmed). So with under 512 MB of the 32-bit game's address space
   free, the landscape and scenery go back to the game's, with a line in chat (`DrawDistance.Memory.cs`,
   `GlobalMemoryStatusEx`'s `AvailVirtual`), and what ran out is remembered (`ranOutAt`, by `Cost`: landblocks of
-  scenery times the density, plus 2% of one per landscape block) so nothing as costly (90%) loads again this session;
+  scenery times the density, plus 12% of one per landscape block, about 1 MB, measured: it was 2%, which let landscape 24 with scenery 3 at 100% load at login and run the game out, crashing at `0x58712F`) so nothing as costly (90%) loads again this session;
   and with under 1 GB free nothing costlier than what's loaded is loaded at all (`MayLoad`), since a big load could run
   out before the once-a-second look. Seen in the game: scenery 10 at 20% left about 1.5 GB, 16 at 20% about 0.8 GB,
   and 16 at 53% ran out. The warning wraps on the page with the controls still there, and buttons to go back to the
@@ -1294,7 +1304,11 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   last has settled** (`LoadSettled`: 2 s since it and a second with no frame over 100 ms; at first, from the plugin's
   start): every black screen came from two loads close together, the last after a hot reload (the old copy's reload
   at shutdown, then the new copy's for a density it took for changed), seen as "0 in full detail" at every look and a
-  black screenshot; with the guard the same hot reload came through clean. A `restart` test step recovers the game.
+  black screenshot; with the guard the same hot reload came through clean. A `restart` test step recovers the game. **Gently after login and portals**
+  (`DrawDistanceRamp.Cautious...`): twice a login stepped scenery 1 to 3 and landscape 15 to 18 two and a half seconds
+  in, and crashed in `make_plane` (`0x539153`) a second later, the world still streaming in; so no step for 8 seconds
+  after logging in (LoginStatus turning 3, a hot reload too) or leaving portal space, then one scenery ring and two
+  landscape rings a step until 38 seconds have gone by. That alone didn't do it (1 to 2 with 15 to 17 crashed the same way): every one of these crashes had the scenery and the landscape go up in the same step, the scenery refreshed in place and the landscape reloaded whole straight after, while either alone never crashed. So **one goes up a step, never both** (`DrawDistanceRamp.OneAtATime`: the landscape first), and the scenery a ring at a time (`SceneryStep` 1). Untested in the game when written. **Faster, with a loading bar** (the user's call: "a bad UX how long it takes to load"): the wait after login or a portal is 4 seconds, landscape steps are 3 rings even then, and while stepping up it's looked at four times a second, not once, so a step follows the last as soon as it's settled; a bar at the top of the screen (`DrawDistance.Progress.cs`, a NoInputs hud of its own) says what's loading and how far along, then Done for a moment.
   Seen
   at scenery 14, 12%: 1.3 GB free in one piece of 1.15 GB, so the address space isn't in pieces, and the device
   stayed fine. Tried in the game: login to scenery 14 at 12% stepped up with four short hangs (0.3 s
@@ -2217,9 +2231,11 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   (x86)\ShadowLauncher`, settings in `%LOCALAPPDATA%\ShadowLauncher`) with a default character set for the account
   and server (ShadowFilter then logs straight in) and **Auto relaunch** ticked (it starts the game again whenever a
   game it launched exits, crash or not, after a delay). Builds land by the loader's hot reload (build into `bin`).
-  A script in `Test Runs\run.txt` (steps `set on|scenery|density|landscape|detail|far N`, `settle S`, `wait S`,
+  A script in `Test Runs\run.txt` (steps `set on|scenery|density|landscape|detail|far N`, `settle S`, `wait S`, `face H` (Decal's `FaceHeading`), `walk S` (autorun for S seconds, stopped at a hot reload too),
   `measure S`, `chat text`, `log text`, `restart`; `#` comments) runs once logged in, a step at a time; each step's
-  outcome goes in `Test Runs\results.txt`, timed. `progress.txt` holds the step running: found at login, the game
+  outcome goes in `Test Runs\results.txt`, timed, with any chat line in the 2 seconds after a `chat` step (`chat
+  /loc` gives what `chat /teleloc` takes to come back to the same place and facing; the plugins' `DAP2|` replies left
+  out). `progress.txt` holds the step running: found at login, the game
   died on it, which is reported and the script dropped. `restart` writes the remaining steps back to `run.txt` and
   exits the game (`ClientMenu.ExitGame`), so they run after the relaunch: use it every ten or so builds (each hot
   reload stays in memory). Claude can't press ShadowLauncher's buttons: the game is set to run as administrator
@@ -2245,7 +2261,12 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   `+0x48`, origin `+0x3C`): 121 blocks, 13,037 real, 12,942 predicted, 90.5% within 1 m, heights exact. The slope
   and building rules brought the count from 3% over to 1% under; the 10% unmatched are placed in both, more than
   1 m apart, which billboards far off won't show.
-- **Fog** (`Ui/DrawDistance.Fog.cs`, the Draw Distance page's Fog slider, `DrawDistanceOptions.Fog`, `fog`, 100 to
+- **Graphics** (the Config tab's Graphics sub tab, `OptionsPanel.RenderGraphics`; the user's call, November 2026):
+  every graphics setting the plugin adds in one place, in sections Frame Rate, Draw Distance, Fog, Lighting, Water, Grass and Image, as
+  well as on the Options window's Config page (`RenderDrawDistance`); both draw the same rows (`RenderFrameRateRow`,
+  `RenderDistanceRows`, `RenderFogRow`, `RenderShading`), so a change shows in both.
+- **Fog** (`Ui/DrawDistance.Fog.cs`, the Draw Distance page's Fog slider, which works with Draw Distance off too,
+  `DrawDistanceOptions.Fog`, `fog`, 100 to
   start, 10 at least; the test step `set fog N`; the user's call, November 2026): the game's distance fog thinned. It's
   Direct3D's linear fog, start to end distance, which the game works out each frame from the sky in its landscape
   update and hands to `RenderDeviceD3D::SetFFFogProperties_` (`0x5A41B0`, thiscall: colour, start, end; it sets
@@ -2254,16 +2275,104 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   100 over the percent; the colour and the game's own Disable Distance Fog (PlayerOption 48) are left alone. Seen in
   the game: the game's 150 to 2400 m at midday; at 100% the far hills were grey silhouettes and the billboards gone in
   them, at 50% the forest showed through haze, at 25% (600 to 9600 m) clear to the horizon, 51 fps.
+- **Shading from depth** (`Ui/DepthShading.cs`, `Shaders/*.hlsl`, `Feed/ShadingOptions.cs`, `SettingsData.Shading`,
+  `shading`, off to start; rows Shading, Occlusion and Shadows under Draw Distance's, `OptionsPanel.Shading.cs`; test
+  steps `set shading|occlusion|shadows|depthview`; the user's call, November 2026: realtime lighting and shadows, the
+  depth route before real sun shadows). Ambient occlusion and short contact shadows away from the sun, one full-screen
+  pass on Decal's RenderFrame (after the world and the billboards, before the interface), its grey multiplied onto the
+  picture. The game's device (logged once, `[shading] device`): depth D24S8 at the screen's size, no multisampling,
+  shader model 3, and the driver offers INTZ, a depth-stencil texture a shader can read. So one of those, the game's
+  depth buffer's size, is bound in its place (SetDepthStencilSurface) at the end of each RenderFrame, the game's next
+  frame draws its world into it, and the pass puts the game's back while it samples ours (and ours again after). A
+  frame where the game had bound something else since gets no pass, counted every 30 seconds. **Device resets**:
+  anything in the default pool still alive makes Reset fail and the game can't draw again; UtilityBelt calls every
+  hud's `OnDestroyTextures` just before one (`HudManager.PreReset`, from Decal's `IDecalRender.PreReset`), so a hidden
+  hud of its own lets the texture and its hold on the game's buffer go there, and it's all made again the next frame.
+  Shaders are compiled ahead by `Shaders/build.cmd` (the Windows SDK's fxc) into `Resources/shaders/*.cso`, checked
+  in and embedded, and made and set through the device's own vtable (CreateVertexShader 91, SetVertexShader 92,
+  SetVertexShaderConstantF 94, CreatePixelShader 106, SetPixelShader 107, SetPixelShaderConstantF 109): Managed
+  DirectX wants its compiler for them. The camera is the device's (`Transform.Projection`, left-handed, near 0.1:
+  M33 1.00003, M43 -0.1; a depth d is z = M43 / (d - M33)); positions are rebuilt from the depth and normals from
+  their screen derivatives. Faced toward the camera by the line of sight, not the view's axis: the first build flipped
+  ground seen at a low angle and darkened the whole slope in front of you (`depthview 3` shows normals as colours;
+  `1` the depth, `2` the shading alone in grey). Off-screen samples don't count, the depth step allowance grows with
+  distance, samples are lifted off the surface, and an occluder much nearer than the surface counts for little (the
+  character left a dark halo on the ground behind them). Contact shadows march 3 m toward the sun (the client's
+  sun vector, as the billboards' light) in 16 steps, none with the sun under the horizon. Seen in the game: the
+  character's feet grounded with soft occlusion and a short shadow away from the sun; about 1.6 fps at 2560x1440.
+  Trees' shadows are longer than 3 m: those want real sun shadows (a shadow map), the next step if this isn't enough.
+- **Water reflections** (`Ui/DepthShading.Water.cs`, `Shaders/water.ps.hlsl`, `Feed/WaterMap.cs`,
+  `Feed/WaterOptions.cs`, `SettingsData.Water`, `water`, off to start; the Graphics tab's Water section and the
+  Options window's Config page, `OptionsPanel.Water.cs`; test steps `set water|waterstrength|ripples|ripplesize|
+  fresnel|glints|blur|softshore`; the user's call, November 2026: screen-space reflections, every piece its own switch
+  to mix and match). Built on the depth shading (its depth texture is kept while either is on; the water pass comes
+  first, so the shading darkens its shores too). Asheron's Call's water is ground with a water terrain type, types
+  0x10 to 0x14 by vertex (the client's SurfChar, as daralet-ACE's `LandblockStruct.CalcCellWater`), and always flat:
+  a map of water vertices 4 landblocks round you (`WaterMap.Build`, an L8 texture, made again on crossing a block),
+  filtered between vertices, says which pixels are water, and its gradient across a shore cell is the soft shoreline.
+  Only surfaces facing up count, so things standing in water don't reflect. The frame's colours are copied to a
+  render-target texture (StretchRect, default pool, let go before a reset with the depth texture), the reflected ray
+  marched through the depth in view space (40 growing steps, a binary search at the hit, 150 m at most, fading at
+  the screen's edges), missing rays the sky colour (the device's fog colour, which the game sets to the sky's).
+  Flat water reads as glass, so the surface the reflection uses is faked: **Ripples** (four waves at odd angles, their
+  size a slider), **Fresnel** (Schlick's, water's 2%, lifted 1.6 times or water seen from a hill shows nothing), **Sun
+  glints** (the reflected ray against the sun), **Distance blur** (four taps spread by how far the reflected point is),
+  **Soft shores**, all blended over the game's own water by **Strength** (35% to start).
+  Tried from the Holtburg overlook (November 2026): at 60%, with ripples a meter or so long and Fresnel lifted 1.6
+  times, the pale sky washed out the game's blue and the far ripples made rings of moire. So each wave is let go of
+  where it's under 12 pixels on screen (`RippleSlope`'s `metersPerPixel`, slanted by the view), the waves are
+  1.7 to 6.3 m and gentler, the reflection takes the hue of the water under it half way, Fresnel's lift is 1.3,
+  and Strength starts at 35%. The large river by Cragstone, from the hill above town, is the other place to tune it.
+- **Image: anti-aliasing and sharpening** (`Ui/DepthShading.Image.cs`, `Shaders/antialias.ps.hlsl`,
+  `Shaders/sharpen.ps.hlsl`, `Feed/ImageOptions.cs`, `SettingsData.Image`, `image`, off to start; the Graphics tab's
+  Image section, `OptionsPanel.Image.cs`; test steps `set antialias|sharpen`; the user's call, November 2026). The
+  first of the "fidelity" features: **the guiding rule for all graphics work is to show Asheron's Call's own art
+  better, never to add effects for their own sake** (the user's call: keep the artistic details, enhance the world the
+  creators made); every feature takes its light and colours from the game, is subtle, and is its own switch, off to
+  start. Anti-aliasing is FXAA (after FXAA 3.11, quality preset 12's search, faint texture contrast left alone) and
+  sharpening AMD's contrast-adaptive CAS, each over a fresh copy of the frame (`CopyFrame`, the water's render
+  target), last of the passes and before the interface, so the UI and the plugin's windows stay as they are. Neither
+  needs depth, so with only these on the game's depth buffer is left in place (`Frame`'s `needsDepth`,
+  `TearDownDepth`). Shaders are built by `Shaders/build.cmd`'s loop (`\a` in a printf'd path became a bell
+  character once: edit the script, don't append to it from bash). Untested in the game when written. The ideas
+  judged doubtful or left out (colour grading, real sun shadows, bloom, god rays, depth of field) are to be tried as
+  experiments, each off by default, sunlight first (the user's call).
+- **Grass and reeds** (`Ui/Grass.cs`, `Feed/GrassLayout.cs`, `Feed/GrassPicture.cs`, `Feed/GrassClump.cs`,
+  `Feed/GrassOptions.cs`, `Shaders/grass.vs.hlsl` and `grass.ps.hlsl`, `SettingsData.Grass`, `grass`, off to start; the
+  Graphics tab's Grass section, `OptionsPanel.Grass.cs`: Density, Distance 15 to 80 m, Height, Reeds on marsh, Wind;
+  test steps `set grass|grassdensity|grassdistance|grassheight|reeds|wind`; the user's call, November 2026: "frill",
+  grass growing out of Asheron's Call's own ground). On the grass terrains only (Lush Grass fullest, Grassland,
+  Patchy Grassland), reeds on Marsh (the user's call); never on a road, in a building's cell or on a slope steeper
+  than about 40 degrees. A jittered 0.6 m grid fixed to each landblock, kept by hash under the terrain's share and the
+  density, so a clump is always in the same place; heights from the full-detail ground. Built round you (the blocks
+  the radius reaches) once you've moved 3 m, a managed vertex buffer of crossed pictures. The pictures are made in
+  code, near white and darker at the base, and **coloured by the ground they grow from**: each grass terrain's own
+  texture (the region's `TerrainInfo.LandSurfaces.TexMerge.TerrainDesc`, `TerrainTex.TexGID`) averaged, `[grass]`
+  lines in log.txt giving each. Lit as the ground is (the ambient plus the sun on ground facing up, both times 1.15, `Grass.GroundLight`): lit with the billboards' share of the sun, it came out near black against the ground (seen in the game, November 2026); the blades' bases are 72% of their tips. The vertex shader
+  sways the tops (the second texture coordinate: how far up, and a phase) and sinks clumps into the ground over the
+  last 30% of the radius, the pixel shader thinning them by the same fade against its cut-out, so nothing pops. Drawn
+  with the billboards, inside the game's frame (`Ui/WorldPass.cs`), so before the depth shading, which runs on
+  RenderFrame, and the occlusion darkens their bases. The device's shader calls are `Ui/DeviceCalls.cs`.
+  Untested in the game when written.
+  **Kept near towns** (`GrassOptions.KeptNearTowns`, on to start, test step `set keptnear`; `Feed/Wildness.cs`; the
+  user's call, November 2026: short, well-kept grass near towns, taller and denser in the wilds): each clump's
+  wildness, 0 to 1, is a smooth step on its distance to the nearest town (kept within 250 m, wild past 700) or outpost
+  (90 and 350) in the map's places (`locations.xml`, as the World tab reads it, map units back to world meters,
+  (EW + 102) * 240). Kept ground takes 60% of the grid's squares and grows 0.55 times as tall and even; wild ground
+  takes all of them and grows 1.35 times as tall and uneven; between, a blend, so no line shows where a town's lawn
+  ends. Kept clumps (wildness under a half) are drawn with their own picture, upright and even as mown, wild ones
+  with leaning, uneven blades.
 - **Billboards, stages 2 and 3: pictures and drawing** (`Feed/TextureDecode.cs`, `Feed/ImpostorRaster.cs`,
   `Ui/BillboardModels.cs`, `Ui/BillboardModel.cs`, `Ui/DrawDistance.Billboards.cs`; Billboards in the Draw Distance
   rows, `DrawDistanceOptions.Billboards`, `billboards`, off to start; the test step `set billboards 1`). Each scenery
   model is drawn side on once by a small software renderer (a Setup's parts by its first placement frame and default
-  scales; DXT1, DXT5 and INDEX16 textures decoded; clip-map surfaces cut out below half alpha) into a 128-pixel-tall
+  scales; every colour format a dat can hold decoded, `TextureDecode.Decode`, so a season's new trees draw too: Daralet
+  changes season by a new dat set, and nothing of the billboards is kept between sessions, so they follow it; clip-map surfaces cut out below half alpha) into a 128-pixel-tall
   A8R8G8B8 texture (managed pool); models under 2 m (the ground scatter) get none. Every block within the landscape
   radius outside the full-detail ring has its scenery worked out by `SceneryLayout` (6 blocks a frame), and each object
   becomes two crossed upright quads turned by its yaw and sized by its scale, in one vertex buffer grouped by model,
-  made again when you cross a landblock or a setting changes. Drawn on Decal's RenderFrame, after the 3D world and
-  before the UI, so the world's depth buffer hides them behind hills: world identity, the device's own View and
+  made again when you cross a landblock or a setting changes. Drawn inside the game's frame (`Ui/WorldPass.cs`, below), after the solid world and
+  before its see-through things (on Decal's RenderFrame if that can't be hooked), so the world's depth buffer hides them behind hills: world identity, the device's own View and
   Projection (skipped while `CombatProjection.IsSwapped`), depth test and write, alpha test at 128, no blending,
   lighting or culling, the device's state captured and put back with a StateBlock. Not indoors, in portal space, or in
   a frame after you've crossed a landblock until it's rebuilt. `CustomVertex.PositionTextured.Format` can't be compiled
@@ -2299,6 +2408,202 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   stepping up. Test steps `set billboards 0|1` and `option <PlayerOption> 0|1` (a game option, through
   `ClientOptions.Set`); a hot reload mid-run hands the steps left to the next copy (`TestRunner.Dispose`): before, the
   new copy took the leftover progress.txt for a crash and dropped the script.
+- **3D far trees** (`Ui/DrawDistance.FarTrees.cs`, `Ui/FarTreeModels.cs`, `FarTreeModel.cs`, `FarTreePart.cs`,
+  `FarTreeInstance.cs`, `Shaders/fartree.vs.hlsl`, `fartree.ps.hlsl`; `DrawDistanceOptions.FarTrees`, `farTrees`,
+  rings past Scenery, 0 to start, 8 at most; the 3D trees row; test step `set fartrees N`; the user's call,
+  November 2026). The game's real trees cost about a microsecond a draw call, each part its own; these are the same
+  objects as the billboards (SceneryLayout, stood on the ground as drawn) as the game's own models, read from the
+  dats (a Setup's parts by its first placement frame, polygons fanned, a part per surface, textures through
+  `BillboardModels.SurfacePixels` with mips), one managed vertex (position, texture place, 20 bytes) and index
+  buffer a model, and every tree a 32-byte instance (place, height, size, cos and sin of its turn, as the billboards
+  turn them) in one buffer, drawn with hardware instancing (stream 0 `0x40000000 | copies`, stream 1 `0x80000000 |
+  1`, through the device's SetStreamSourceFreq, vtable 102, `DeviceCalls.StreamFrequency`), one DrawIndexedPrimitive
+  a model and texture, in the game's frame (WorldPass) before the billboards. The shaders place, light (the
+  billboards' light: ambient plus the sun's share by strength), cut out and fog (the game's linear fog, which
+  shaders get none of: its start, end and colour read from the device). `VertexElement.VertexDeclarationEnd` needs
+  Microsoft.VisualC to compile, so the end is written out. Seen in the game at the plateau overlook: real trees to 3
+  landblocks 52 fps; real to 2 with billboards 98; real to 2 with 3D trees on ring 3 (1,322 trees) 103, rings 3 to
+  6 (8,028 trees, 1.4 million triangles) 104; the 3D ring looked all but the same as the real one.
+- **Budget and presets** (`Ui/OptionsPanel.Budget.cs`, `Feed/GraphicsCost.cs`, `Feed/GraphicsPresets.cs`; the user's call,
+  November 2026: a cost beside each setting and two budget bars, presets, and the Graphics tab regrouped: Budget, View
+  Distance (Landscape, Ground detail, Fog), Trees and Scenery (Scenery, density, 3D trees, billboards, far buildings),
+  Model Detail, then Lighting, Water, Grass, Image). `GraphicsCost` is each setting's estimate over the game's own, in
+  MB and ms, from the rates measured: Landscape 1 MB a block, Ground detail 1.8 MB and 0.013 ms a block, Scenery 8 MB
+  and 0.2 ms a block at full density (a forest's: a desert took far less), the screen passes rough (`Rough`, shown with
+  "~"). Each slider shows its cost for the value held, before anything loads (`Previewed`). The bars: memory against
+  what's free plus what these settings hold, less 800 MB spare; frame rate, the last 5 seconds' frame time less the
+  estimate for what's on (the game's own cost where you stand) plus the estimate for what's shown, against a target
+  (`GraphicsTargetFps`, 60, 100 or 144); both taken only while the draw distance is loaded (`AtTarget`). Presets
+  (Scenery is the cost of both, so it stays at 1 or 2): Retail (off), Performance (Scenery 1, Ground 6, Landscape 16),
+  Balanced (2, 6, 20), Quality (2, 8, 20), each with 3D trees 2 rings, billboards and far buildings; lit when the
+  settings are one, else Custom. **Changes wait for Apply** (`OptionsPanel.Draft.cs`; the user's call: try settings
+  until the estimate suits, then apply): the rows edit copies (`DrawDistanceSettings`, `ShadingSettings`...), made
+  afresh each frame while nothing's changed; Apply copies their fields into the settings' own objects and does what a
+  change did (`Commit`, which the test runner calls directly); Revert drops them. The bars price the copies against
+  what's in use. Untested in the game when written.
+- **Ground detail** (`Ui/DrawDistance.Ground.cs`, `DrawDistanceOptions.GroundRadius`, `groundRadius`, 0 for with Scenery;
+  the row under Scenery; test step `set ground N`; the user's call, November 2026: "roads are drawn from the Scenery
+  setting too"). Past the full-detail ring the game draws a block's ground from every 2nd, 4th or 8th vertex, and
+  roads, marked per vertex, break up; the far water smears the same way. So the rings are patched out to Ground
+  detail (`patchedRadius`), and past Scenery (`treeRadius`, from the load point, the LScape's `+0x10`, the LScape at
+  `[0x8456F0]`) the road check that Scenery density hooks says every tree is on a road, so the game makes none;
+  buildings and the dats' placed objects come as ever. Blocks left without trees are noted (`skippedBlocks`, by
+  0xXXYY) and get billboards and 3D trees (`TreeRing`); one walked toward, now within Scenery, gets the game's trees
+  from `get_land_scenes` (`0x5311A0`, thiscall, nothing else; only while the scenery flag `[0x81EF08]` is on) then
+  `init_static_objs` (0, its with-objects path, which fits them to the ground and puts them in their cells), six
+  blocks a look (`GrowTrees`). One walked away from keeps its trees and isn't noted, so nothing doubles it. Far
+  buildings start past the full-detail ring, where the game's stop. Tried in the game (a desert overlook, Scenery 4):
+  Ground 4 to 8 stepped up in 12 s, the road ran on to the horizon, 132 fps to 91 and 336 MB (`GroundBlockCost`
+  0.2). Walking toward far blocks untested when written. `[ground]` lines in log.txt.
+- **Far buildings** (`Ui/DrawDistance.FarBuildings.cs`, `DrawDistanceOptions.FarBuildings`, `farBuildings`, off to start; the
+  Far buildings row under 3D trees; test step `set farbuildings 1`; the user's call, November 2026: a town two
+  landblocks off vanished with a step back). The game makes a block's buildings and the dats' placed objects only in
+  full detail (`init_buildings`, `init_static_objs`), as its trees. Past that ring, out to the landscape's edge, each
+  block's LandblockInfo (`Buildings`: model and frame; `Objects`: the placed ones) goes into the far trees' instances
+  (the game's own models, instanced), turned by the yaw of its quaternion (2 atan2(z, w)), size 1, raised or lowered
+  by the coarse ground's distance from the true ground under its origin. Models under 2 m are left out. `[far-buildings]`
+  lines in log.txt. Untested in the game when written.
+- **Memory** (`Ui/FrameRateWindow.Memory.cs`, `Feed/MemoryHistory.cs`, `MemorySample.cs`; the user's call, November 2026:
+  "the client's memory leak is my top concern"): the Frame Rate window's Memory section, every 2 s from login whether
+  it shows or not: the 32-bit address space used of its total (GlobalMemoryStatusEx; the real limit), private bytes
+  and working set (Process), the managed heap (GC.GetTotalMemory, every plugin and every hot-reloaded copy in it), and
+  every 10 s the largest free piece (the VirtualQuery walk the device lines use, `FreePieces`); growth in MB a minute
+  over 5 and 15 minutes and since login (a fitted line, so one load doesn't decide it), minutes until 512 MB is left
+  at that rate, a 15-minute graph with the marks; Clear forgets it. The frame rate log's rows end with used_mb,
+  private_mb, working_set_mb, plugin_mb and largest_free_mb. Seen in the game: 2,987 MB used, 2,036 private, the
+  managed heap about 300 MB (after a session of hot reloads), the largest free piece 875 MB; standing still for three
+  minutes it held flat (the rise in the first 30 s was the reload's loading).
+- **Texture filtering** (`Ui/DepthShading.Anisotropy.cs`, `ImageOptions.Anisotropy`, 0 to start, 2 to 16; the Image
+  section; test step `set anisotropy N`; the user asked why the far water looked distorted). The far water's streaks
+  are the game's own: retail looks the same as Scenery 1 and 2 (seen in the game). Setting the samplers' filter from
+  outside did nothing, since RenderDeviceD3D::SetSamplerFilterMode (`0x5A4460`) sets it on every draw; it turns linear
+  into anisotropic when the texture filtering preference (`0x81FFA0`, registered at start, `0x54F6B8`, set by the
+  graphics presets; 2 here, trilinear) is 3. So the preference is set to 3 while on (put back when off or at shutdown),
+  and MaxAnisotropy (sampler state 10, which the game only sets making the device, `0x5A5347`) each frame. At 16x the
+  far water looked the same: likely the wavy texture squashed by foreshortening, which filtering can't undo, or the
+  terrain's blending stages not taking the setting (not looked into). Kept, off to start; whether it sharpens roads
+  and ground far off is unchecked.
+- **Where the device's world is measured from** (`Ui/RenderOrigin.cs`): the camera's landblock, not your character's.
+  The game keeps the camera's Position at `0x81FF10` (cell `+4`, origin `+0x3C`: the device's camera exactly, height and
+  north swapped as the device has them; the test step `camera` logs both). A step across a landblock's edge with the
+  camera still behind you moved the shadow maps and the far scenery 192 m (the user's screenshots, November 2026). So
+  everything drawn in the 3D world measures from `RenderOrigin.Landblock` (billboards, 3D trees, grass, shadow maps,
+  the water map, lamps), your place is `RenderOrigin.Player()`, and billboards and 3D trees made for another landblock
+  are drawn shifted by the landblocks between until they're made again, so the far scenery neither jumps nor blinks. They're built round your character's landblock (the game's full-detail ring is round it), and the centre the drawn buffers are shifted from changes only once the new ones are made (`pendingHome`): set at once, the old ones were drawn a landblock off while the new were worked out, and the far forest vanished at an edge and came back a few steps on (seen in the game).
+  The memory panel's time-left warning waits for five minutes of readings and goes by the 15-minute rate: a minute
+  holding a landscape load read +105 MB/min.
+- **Lamp light and glow** (the user's call, November 2026: "lighting/shadows from non-sun light sources, and maybe
+  even emissive objects"). **The game's lights** (`Ui/GameLights.cs`, `GameLight.cs`; test step `lights` logs them):
+  Render::add_static_light (`0x54DFF0`) and add_dynamic_light (`0x54E030`), cdecl (LIGHTINFO*, cell, Frame*), both
+  keep RenderLight pointers sorted nearest first via `0x54DDC0`: static count `0x8683B4`, pointers `0x86B748`;
+  dynamic `0x86B838`, `0x86C0D4`. A RenderLight: D3DLIGHT9 (0x68), cell `+0x6C`, type `+0x70` (0 point, 1 distant,
+  2 spot), frame `+0x74` (origin `+0xA8`, its cell's landblock's meters), colour `+0xC0`, intensity `+0xCC`, falloff
+  `+0xD0`, cone `+0xD4`, distance squared `+0xD8` (stale: 100 m for lights 20 away). Seen at Holtburg: the houses'
+  lamps (static, indoor cells, warm, falloff 3 to 15, intensity 100), a white light round you (dynamic, 2.25, 10)
+  and a purple one. Render::config_hardware_light (`0x59BD40`) makes each a Direct3D light: diffuse colour times
+  intensity, attenuation 1 over the distance (all but saturated in reach), range falloff times the float at
+  `0x821CD4` (1.5); the game lights objects and indoor cells per vertex with them, never the outdoor ground, and
+  nothing blocks them. **Lamp light** (`Ui/DepthShading.Lamps.cs`, `Shaders/lamps.ps.hlsl`, `Feed/LampLightOptions.cs`,
+  `lampLight`, off to start; Lamp light rows under Sun shadows; test steps `set lamps|lampstrength|lampshadows`): the
+  eight nearest to the camera brighten what's round them per pixel, a smooth fade to the game's reach, facing only,
+  blocked by a 12-step march through the depth buffer, blended as the picture times one plus the light; strength the
+  colour times intensity over ten (to one). Seen indoors at Holtburg: the wall and stones by a lantern warmer, 164 fps.
+  **Lamp shadows from cube maps** (`Ui/DepthShading.LampShadows.cs`, `Shaders/lampshadow.vs.hlsl`, `lampshadow.ps.hlsl`):
+  the first, marched through the depth buffer, "look awkward, of the character and especially whatever is making that
+  shadow on the wall" (the user): a march only knows what's on screen. Now the two lamps nearest you that cast shadows
+  get a cube map each (six 90-degree faces, 512, R32F, distance over reach; one D24S8 surface shared), drawn from the
+  noted game draws within the lamp's reach and 15 m (the hooks are in while sun or lamp shadows want them), and the
+  pass compares a place's distance with the map's that way (five spread samples). The lamp's light sits inside its own
+  lantern, which then hid everything from it (every pixel came out shadowed): nothing within 35 cm counts (the near
+  plane) and draws placed within 75 cm (the lantern) aren't made; the ceiling's beams by a lamp shadowed themselves in
+  stripes until a grazing surface got more allowance. `depthview 4` shows what the first shadowed lamp sees. Seen: your
+  legs' and the table's shadows on the floor, the pillar's far side dark, the wall no longer shadowed for nothing.
+  The pass itself:
+  **Lamp shadows** (the user's call: player shadows from lamps, as in a room): a shadow pass before the light, the
+  same shader in mode 1, multiplying in what's left of the game's own light (it lights everything in reach in full)
+  where the march finds something between a surface and a lamp, up to 55% times the strength; the dynamic light within
+  3 m of you (the one the game hangs round your character) casts none. Seen: your shadow on a house's floor.
+  **Glow** (`Ui/DepthShading.Glow.cs`, `Shaders/glowbright.ps.hlsl`, `glowblur.ps.hlsl`, `ImageOptions.Glow`, 0 to start;
+  the Image section's Glow; test step `set glow N`): the art marks nothing as glowing, so it's told by look, bright
+  (brightest channel past 0.6) and strongly coloured (near-white sunlit armour and clouds don't); a quarter-size
+  pass of what glows (from 0.5), a Gaussian blur across and down three quarter-size texels a sample, added (twice the
+  strength) onto the screen, after the see-through things and before
+  the anti-aliasing. Seen in the game: the lifestone's crystal brighter with a soft halo; the hearth's dim embers don't
+  glow. Teleporting into a building takes the indoor cell and a place in it (`/teleloc 0xA9B40163 [104 39 97]`); a
+  place outside the cell is refused without a word.
+- **Drawing inside the game's frame** (`Ui/WorldPass.cs`): billboards and grass drawn on Decal's RenderFrame, after
+  the whole world, came out in front of the lifestone's crystal (seen in the game, November 2026): the game draws its
+  see-through things last, sorted and without writing depth, so they hide nothing behind them. SmartBox::
+  RenderNormalMode (`0x453B40`) draws the world, then calls D3DPolyRender::FlushAlphaList (`0x59E3F0`, static cdecl,
+  one int, 0) at `0x453C2B` for the see-through list; that call is hooked while anything's subscribed
+  (`WorldPass.Add`), drawing each subscriber's piece and then the game's list. Each still builds on RenderFrame and
+  draws there only if the hook couldn't be set (`WorldPass.Hooked`). Tried in the game: the crystal now covers the
+  far trees, and grass draws as before. The passes that read depth (water, shading, sun shadows: `DepthShading.
+  DrawInWorldPass`) are drawn there too, after the billboards and grass: on RenderFrame they shaded the ground behind
+  the crystal onto the crystal (seen in the game, the sun shadows' first build). Ours is the depth buffer then, so the
+  pass puts the game's in its place while it samples ours and ours back after, for the see-through things to be
+  tested against. The image passes (anti-aliasing, sharpening) stay on RenderFrame, over everything.
+- **Sun shadows** (`Ui/ShadowCasters.cs`, `Ui/DepthShading.Shadows.cs`, `Shaders/shadow.vs.hlsl`, `shadow.ps.hlsl`,
+  `Feed/SunShadowOptions.cs`, `SettingsData.SunShadows`, `sunShadows`, off to start; rows Sun shadows, Darkness and
+  Distance under Shading; test steps `set sunshadows|sunstrength|sundistance|sunreplay`, `probe`, `find words`; the user's call, November 2026:
+  "especially sun light"). A real shadow map, from the game's own draws. The test step `probe` (`Ui/DrawProbe.cs`)
+  counts the device's calls over a frame, split at BeginScene and at the see-through list: at the Holtburg overlook
+  the world was about 8,300 DrawIndexedPrimitive calls from managed vertex buffers of 44-byte vertices (FVF `0x252`:
+  position, normal, colour, two texture coordinates; drawn through SetVertexDeclaration), each placed by
+  SetTransform(World), fixed-function, about 280,000 triangles, plus 1,350 small DrawPrimitiveUP calls (left out).
+  Managed buffers outlive the frame, so while sun shadows are on the device's BeginScene, SetTransform,
+  SetRenderState, SetTexture, SetVertexDeclaration, SetStreamSource, SetIndices and DrawIndexedPrimitive (vtable 41,
+  44, 57, 65, 87, 100, 104, 82: one vtable for every device, patched with VirtualProtect) note each such draw from
+  BeginScene to the see-through list (`ShadowCasters.EndOfWorld`, from WorldPass), its buffers held (AddRef) until
+  the replay lets them go. The replay (before the shading pass, on RenderFrame) draws those placed within Distance
+  plus 40 m of you, with the game's own vertex declaration, into a 2048 R32F render target from the sun
+  (orthographic, Distance each way, moved in whole texels), leaves cut out where the game alpha tests. The shading
+  pass (which runs for these with Shading off too, its occlusion and contact shadows then none) looks each pixel up:
+  a 3x3 texel filter blended by where it falls between texels (hard steps showed each 6 cm texel as a block at the
+  camera's feet), and a shadowed pixel keeps the game's ambient and loses the sun's share by the game's own light
+  (ambient plus sun on it, as the grass matched). Seen in the game: the character, the lifestone's feet and the
+  buildings cast soft shadows in the right direction, with no crash. Billboards and grass cast none (drawn by the
+  plugin, not noted). Two maps (the user's call): near 40 m, far out to Distance (150 to start, 400 at most), the
+  shader blending near into far toward the near map's edge; at 60 m alone the town below the overlook cast nothing.
+  **The cost, measured at the plateau overlook** (test steps `measure`; `set sunreplay 0` notes the draws but makes
+  no map, to time the hooks alone): retail 150 fps, landscape 24 141, billboards 139, real trees to 2 landblocks 107,
+  to 3 at 50% 86 and at 100% 60 (the game's own drawing: the third ring alone costs about 40 fps). The first sun
+  shadows halved the frame rate with trees to 3 (60 to 30): every draw held its buffers through a delegate made for
+  each call (Marshal.GetDelegateForFunctionPointer, eight a draw), a record and matrix allocated per draw, and
+  eight hooks. Now (61 to 56 with trees to 3, 107 to 93 at 2): records are reused, a draw too far
+  for the far map isn't noted (`SetArea`), only BeginScene, SetTransform and DrawIndexedPrimitive are hooked (the
+  rest asked of the device for a near draw only), and `DeviceCalls` keeps its delegates. What's left is mostly the
+  hooks themselves: each call the game makes into one crosses into managed code (about 65 ns), some 17,000 a frame;
+  the maps and the screen pass cost little. **Holding the buffers**: a noted draw keeps the references the device's Get
+  calls hand back until the frame's replays are done (`ShadowCasters.ReleaseNoted`, after the world pass's, at the end
+  of RenderFrame, and before a device reset); without them the game crashed in `DrawInto` (an AccessViolationException,
+  which .NET can't catch: November 2026), a buffer let go within the frame before the replay. Held till the next frame
+  instead, the device couldn't reset ("Could not initialize Direct3D"): some of them are in the default pool.
+  **Draws that write no depth aren't casters** (D3DRS_ZWRITEENABLE, render state 14, asked of the device for a near
+  draw): the game's sky, its dome and cloud layer, is drawn round the camera, so always near, and its cut-out clouds
+  cast shadows that drifted across the ground ("almost like cloud shadows", the user, November 2026). So SetTransform and DrawIndexedPrimitive now go through native stubs
+  (`Ui/ShadowStubs.cs`: x86 written into a read-write-execute page, never freed): SetTransform copies a World matrix
+  to the page, DrawIndexedPrimitive while recording checks its distance with SSE, and only a near draw jumps to the
+  C# hook; both end in a jump to the device's own, so the stack is the game's call's. Measured: 61 to 58 fps with
+  trees to 3, 106 to 98 at 2. **A close map** (the user's call: "more detailed" character shadows): a third, 8 m
+  each way round you, 8 mm texels (the near map's 4 cm left a blob), every caster within 48 m made into it (a tree's
+  shadow reaches in), the shader taking it where it covers the pixel; the fixed shadow allowance went from 5 cm to
+  2 cm, or the shadow left the feet. Seen in the game: the character shades itself (head on chest, belt, arms) and
+  its ground shadow has crisp edges; 88 fps with trees to 2. **The real trees' cost** (probe at the overlook): to 2
+  landblocks 3,400 draws and 103,000 triangles a frame at 94 fps, to 3 8,500 and 286,000 at 64: the third ring is
+  about 5,100 more draw calls, about a microsecond each, every tree part its own call; nothing in the game's own
+  drawing to make cheaper from here. **Softness** (`SunShadowOptions.Softness`, 20 cm to start, 0 to 100; the Softness row; test
+  step `set sunsoftness N`; the user's call: tree shadows "great, but the edges maybe slightly too hard"): a width in
+  meters, the same in every map, so the near and far edges match; past a texel and a half, sixteen samples in a Poisson
+  disc of it, turned by each pixel's hash, with a little more allowance on slanting ground; under it, the texel
+  filter as before. Seen in the game at a forest's edge in Holtburg's south: 0 hard, 20 soft tree shapes, 40 softer.
+  **Normal offset**: each map is looked up a little way out from the surface, along its normal, by 2 to 5 of that map's
+  texels (more where the sun grazes): with a low sun the far map's 15 cm texels shadowed the ground they covered, and
+  everything past the near map's edge darkened, a lit square round you (the user's screenshot, November 2026).
+  **Shade on things**: the ground is lit by how it faces the sun (so ground turned away is skipped), but the game
+  lights characters and things evenly all round, so a character's back in a tree's shade went unshaded (seen in the
+  game); a surface facing sideways or down (`upView`, c20, the view's up) now loses at least 0.4 of the sun's share in
+  shadow whichever way it faces. Seen: the character darker in the pines' shade; dusk hillsides unchanged.
 - **Everything the plugin writes** goes in `Documents\Decal Plugins\Daralet Toolkit` (`DataFolder`): `settings.json`,
   `profiles.json`, `Settings Profiles`, `Settings Exports`, `log.txt`, `Loot Profiles`, `Hotbar Layouts`, `Combat Logs`, `Chat Logs`, `Frame Rate Logs`, `Test Runs`, `world-data`. It was `Decal Plugins\Daralet` before the rename: `PluginCore.Startup` moves
   that folder over first thing (`DataFolder.MoveOldFolder`, `FolderMove.Once`, copying instead if a file's held open),

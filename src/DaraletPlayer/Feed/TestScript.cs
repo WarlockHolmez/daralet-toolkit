@@ -24,7 +24,11 @@ namespace DaraletPlayer.Feed {
     /// </summary>
     public static class TestScript {
         public static readonly string[] Fields =
-            { "on", "scenery", "density", "landscape", "detail", "far", "billboards", "fog" };
+            { "on", "scenery", "density", "landscape", "detail", "far", "billboards", "fog", "shading", "occlusion",
+                "shadows", "depthview", "water", "waterstrength", "ripples", "ripplesize", "fresnel", "glints", "blur",
+                "softshore", "antialias", "sharpen", "grass", "grassdensity", "grassdistance", "grassheight", "reeds",
+                "keptnear", "wind", "sunshadows", "sunstrength", "sundistance", "sunreplay", "fartrees", "farbuildings",
+                "ground", "portalreload", "lamps", "lampstrength", "lampshadows", "glow", "sunsoftness", "anisotropy" };
 
         /// <summary>Each step in order; a line it can't read is a step of kind "bad", which the run reports and stops on.</summary>
         public static List<TestStep> Parse(IEnumerable<string> lines) {
@@ -55,6 +59,7 @@ namespace DaraletPlayer.Feed {
                 case "wait":
                 case "measure":
                 case "settle":
+                case "walk":
                     return Number(rest, out var seconds) && seconds > 0
                         ? new TestStep(number, line, kind, null, seconds, null)
                         : Bad(number, line, kind + " takes a number of seconds");
@@ -68,6 +73,11 @@ namespace DaraletPlayer.Feed {
 
                     return new TestStep(number, line, kind, parts[0].ToLowerInvariant(), value, null);
                 }
+                case "face":
+                    // a heading in degrees, 0 north, 90 east, as the game's
+                    return Number(rest, out var heading) && heading >= 0 && heading < 360
+                        ? new TestStep(number, line, kind, null, heading, null)
+                        : Bad(number, line, "face takes a heading from 0 to 359");
                 case "option": {
                     // a game option (PlayerOption) on or off: "option 48 0" is distance fog on; "option 5" only says
                     // what it is (a number of -1)
@@ -79,13 +89,19 @@ namespace DaraletPlayer.Feed {
                         ? new TestStep(number, line, kind, parts[0], on, null)
                         : Bad(number, line, "option takes an option number, and 0 or 1 to set it");
                 }
+                case "find":
                 case "chat":
                 case "log":
                 case "screenshot":
                     return rest.Length > 0 ? new TestStep(number, line, kind, null, 0, rest)
                         : Bad(number, line, kind + " takes some text");
                 case "restart":
+                case "kill":
+                case "camera":
+                case "lights":
+                case "probe":
                 case "compare":
+                case "where":
                     return new TestStep(number, line, kind, null, 0, null);
                 default:
                     return Bad(number, line, "no step called " + kind);

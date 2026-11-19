@@ -26,8 +26,19 @@ namespace DaraletPlayer.Ui {
         /// <summary>Less than this and nothing that draws more is loaded.</summary>
         private const long RaiseMemoryMegabytes = 1024;
 
-        /// <summary>The landscape's own cost next to a landblock of scenery: its ground is far cheaper than its trees.</summary>
-        private const double LandscapeBlockCost = 0.02;
+        /// <summary>
+        /// The landscape's own cost next to a landblock of scenery: about 1 MB a block, measured in the game (November
+        /// 2026: landscape 21 to 24, 552 more blocks, took 564 MB). It was 0.02, a sixth of that, and the estimate let
+        /// landscape 24 with scenery 3 at 100% load at login, which left 765 MB free and crashed the game (0x58712F).
+        /// </summary>
+        private const double LandscapeBlockCost = 0.12;
+
+        /// <summary>
+        /// A block in full detail without its trees (Ground detail past Scenery), next to one with them: its 64 cells and
+        /// finer ground, buildings and placed objects. Measured in the game (November 2026): Ground detail 4 to 8 with
+        /// Scenery 4, 208 more blocks, took 336 MB, 1.6 MB a block.
+        /// </summary>
+        private const double GroundBlockCost = 0.2;
 
         /// <summary>
         /// About how much memory a unit of Cost takes, from the game (November 2026): scenery 5 to 16 landblocks at 20%
@@ -92,10 +103,12 @@ namespace DaraletPlayer.Ui {
         /// Roughly how much a setting costs, in landblocks of full scenery: the blocks with scenery at their density,
         /// and the landscape's blocks at a fraction of one each.
         /// </summary>
-        private static double Cost(int sceneryRadius, int densityPercent, int landscapeRadius) {
+        private static double Cost(int sceneryRadius, int densityPercent, int groundRadius, int landscapeRadius) {
             var scenery = 2.0 * sceneryRadius + 1;
+            var ground = 2.0 * Math.Max(sceneryRadius, groundRadius) + 1;
             var land = 2.0 * landscapeRadius + 1;
-            return scenery * scenery * densityPercent / 100 + land * land * LandscapeBlockCost;
+            return scenery * scenery * densityPercent / 100 + (ground * ground - scenery * scenery) * GroundBlockCost
+                + land * land * LandscapeBlockCost;
         }
 
         /// <summary>The memory message for the Options page, or null.</summary>

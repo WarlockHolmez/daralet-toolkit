@@ -14,12 +14,38 @@ namespace DaraletPlayer.Feed {
         /// Scenery rings added a step. 2 every 4 seconds held; the user found 1 to 13 in 25 seconds too slow, and 3 a
         /// second crashed the game at login on the step from 10 to 13 (288 blocks of trees, a second after the last
         /// step): "OUT OF MEMORY: Failed to allocate -1178753584 bytes", a size gone wrong, likely one load running into
-        /// the last (November 2026). So 2, as soon as the last step's loading is done (MayStep).
+        /// the last (November 2026). So 2, as soon as the last step's loading is done (MayStep); then 1, since scenery 1 to 3
+        /// with landscape 15 to 18 in the same step crashed the game in make_plane (0x539153) three times (twice at login,
+        /// once mid-session), a couple of seconds after it.
         /// </summary>
-        public const int SceneryStep = 2;
+        public const int SceneryStep = 1;
 
         /// <summary>Landscape rings added a step: the ground is lighter than its trees and buildings.</summary>
         public const int LandscapeStep = 3;
+
+        /// <summary>
+        /// One thing raised a step, never both: with the landscape and the scenery both going up, the landscape goes first
+        /// and the scenery waits for a later step (the crashes under SceneryStep came from both in one step).
+        /// </summary>
+        public static (int Scenery, int Landscape) OneAtATime(int scenery, int landscape, int nextScenery,
+            int nextLandscape) {
+            return nextScenery > scenery && nextLandscape > landscape ? (scenery, nextLandscape)
+                : (nextScenery, nextLandscape);
+        }
+
+        /// <summary>
+        /// Right after login or a portal the game is still streaming the world in: twice in a row a login stepped from
+        /// scenery 1 to 3 (and landscape 15 to 18) two and a half seconds in, and crashed in CPolygon::make_plane
+        /// (0x539153) a second later (November 2026). So no step for CautiousWaitSeconds after either (8 at first, 4 once a step only ever raised one of the two), and small steps
+        /// (CautiousSceneryStep, CautiousLandscapeStep) until CautiousSeconds have gone by.
+        /// </summary>
+        public const double CautiousWaitSeconds = 4;
+
+        public const double CautiousSeconds = 38;
+
+        public const int CautiousSceneryStep = 1;
+
+        public const int CautiousLandscapeStep = 3;
 
         /// <summary>The least seconds between steps.</summary>
         public const double StepSeconds = 1.5;

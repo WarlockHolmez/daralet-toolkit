@@ -53,10 +53,6 @@ namespace DaraletPlayer.Ui {
             PluginCore.LogFile($"[draw-distance] scenery density {appliedDensity}% -> {percent}%");
             appliedDensity = percent;
 
-            if (percent >= 100) {
-                UnhookOnRoad();
-            }
-
             return true;
         }
 
@@ -101,7 +97,16 @@ namespace DaraletPlayer.Ui {
             try {
                 var percent = densityPercent;
 
-                if (onRoad != 0 || percent >= 100 || landblock == IntPtr.Zero || place == IntPtr.Zero) {
+                if (onRoad != 0 || landblock == IntPtr.Zero || place == IntPtr.Zero) {
+                    return onRoad;
+                }
+
+                // past Scenery, in Ground detail's rings: no trees from the game (DrawDistance.Ground.cs)
+                if (!TreesAllowed(*(uint*)((byte*)landblock + LandBlockId))) {
+                    return 1;
+                }
+
+                if (percent >= 100) {
                     return onRoad;
                 }
 

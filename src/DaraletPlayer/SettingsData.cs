@@ -405,6 +405,27 @@ namespace DaraletPlayer {
         /// <summary>Draw distance past the game's own settings (DrawDistance, the Options window's Config).</summary>
         [DataMember(Name = "drawDistance")] public DrawDistanceOptions DrawDistance;
 
+        /// <summary>The frame rate the Graphics tab's budget bar is measured against (OptionsPanel.Budget.cs).</summary>
+        [DataMember(Name = "graphicsTargetFps")] public int GraphicsTargetFps;
+
+        /// <summary>Shading from the game's depth buffer (DepthShading, the Options window's Config).</summary>
+        [DataMember(Name = "shading")] public ShadingOptions Shading;
+
+        /// <summary>Water reflections (DepthShading, the Graphics settings).</summary>
+        [DataMember(Name = "water")] public WaterOptions Water;
+
+        /// <summary>Anti-aliasing and sharpening of the 3D world (DepthShading, the Graphics settings).</summary>
+        [DataMember(Name = "image")] public ImageOptions Image;
+
+        /// <summary>Grass and reeds near you (Grass, the Graphics settings).</summary>
+        [DataMember(Name = "grass")] public GrassOptions Grass;
+
+        /// <summary>Shadows cast by the sun (ShadowCasters, DepthShading), the Graphics settings.</summary>
+        [DataMember(Name = "sunShadows")] public SunShadowOptions SunShadows;
+
+        /// <summary>Light from the game's own lights, with shadows (DepthShading.Lamps), the Graphics settings.</summary>
+        [DataMember(Name = "lampLight")] public LampLightOptions LampLight;
+
         /// <summary>The Radar window (RadarPanel).</summary>
         [DataMember(Name = "radar")] public RadarOptions Radar;
 
@@ -577,6 +598,13 @@ namespace DaraletPlayer {
             Link = new LinkOptions();
             Book = new BookOptions();
             DrawDistance = new DrawDistanceOptions();
+            GraphicsTargetFps = 60;
+            Shading = new ShadingOptions();
+            Water = new WaterOptions();
+            Image = new ImageOptions();
+            Grass = new GrassOptions();
+            SunShadows = new SunShadowOptions();
+            LampLight = new LampLightOptions();
             Radar = new RadarOptions();
             Attributes = new AttributesOptions();
             Spellbook = new SpellbookOptions();

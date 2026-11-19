@@ -14,7 +14,7 @@ namespace DaraletPlayer.Tests {
                 steps.Add(at);
             }
 
-            CollectionAssert.AreEqual(new[] { 3, 5, 7, 9, 11, 13, 15, 16 }, steps);
+            CollectionAssert.AreEqual(new[] { 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }, steps);
         }
 
         [TestMethod]
@@ -22,6 +22,13 @@ namespace DaraletPlayer.Tests {
             Assert.IsFalse(DrawDistanceRamp.MayStep(1, 5), "too soon after the last step");
             Assert.IsFalse(DrawDistanceRamp.MayStep(5, 0.5), "still loading: a slow frame half a second ago");
             Assert.IsTrue(DrawDistanceRamp.MayStep(1.5, 1));
+        }
+
+        [TestMethod]
+        public void RaisesTheLandscapeBeforeTheScenery() {
+            Assert.AreEqual((1, 18), DrawDistanceRamp.OneAtATime(1, 15, 2, 18));
+            Assert.AreEqual((2, 18), DrawDistanceRamp.OneAtATime(1, 18, 2, 18));
+            Assert.AreEqual((1, 15), DrawDistanceRamp.OneAtATime(3, 18, 1, 15), "going down, both at once");
         }
 
         [TestMethod]

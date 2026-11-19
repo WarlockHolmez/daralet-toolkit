@@ -1,3 +1,4 @@
+using System;
 using System.Runtime.Serialization;
 
 namespace DaraletPlayer.Feed {
@@ -62,6 +63,25 @@ namespace DaraletPlayer.Feed {
         [DataMember(Name = "billboards")] public bool Billboards;
 
         /// <summary>
+        /// Rings of landblocks past the real scenery whose trees the plugin draws itself as the game's own 3D models, one draw
+        /// a model (Ui/DrawDistance.FarTrees.cs), before the billboards take over; 0 for none.
+        /// </summary>
+        [DataMember(Name = "farTrees")] public int FarTrees;
+
+        public const int MaxFarTrees = 8;
+
+        public int ClampedFarTrees => FarTrees < 0 ? 0 : FarTrees > MaxFarTrees ? MaxFarTrees : FarTrees;
+
+        /// <summary>
+        /// Buildings and the dats' placed objects past the real scenery, out to the landscape's edge, drawn by the plugin as
+        /// the game's own 3D models (Ui/DrawDistance.FarBuildings.cs): the game makes them only for full-detail blocks.
+        /// </summary>
+        [DataMember(Name = "farBuildings")] public bool FarBuildings;
+
+        /// <summary>Whether anything stands for the trees past the real scenery: billboards, 3D trees or both.</summary>
+        public bool FarScenery => Billboards || ClampedFarTrees > 0 || FarBuildings;
+
+        /// <summary>
         /// How much of the game's distance fog is drawn, in percent (Ui/DrawDistance.Fog.cs): lower pushes it further out.
         /// 100 for the game's own.
         /// </summary>
@@ -88,6 +108,17 @@ namespace DaraletPlayer.Feed {
         public int ClampedSceneryRadius => SceneryRadius < GameSceneryRadius ? GameSceneryRadius
             : SceneryRadius > MaxSceneryRadius ? MaxSceneryRadius : SceneryRadius;
 
+        /// <summary>
+        /// How many landblocks out the ground is in full detail (Ui/DrawDistance.Ground.cs): roads, shores and water edges
+        /// drawn right, without the game's trees past Scenery. Never less than Scenery; 0 for the same.
+        /// </summary>
+        [DataMember(Name = "groundRadius")] public int GroundRadius;
+
+        public int ClampedGroundRadius => Math.Max(ClampedSceneryRadius, Math.Min(MaxSceneryRadius, GroundRadius));
+
+        /// <summary>A copy, for the Graphics tab to work out what a change would cost before it's made.</summary>
+        public DrawDistanceOptions Copy() => (DrawDistanceOptions)MemberwiseClone();
+
         /// <summary>The landscape radius wanted, or 0 for the game's own.</summary>
         public int ClampedLandscapeRadius => LandscapeRadius <= 0 ? 0
             : LandscapeRadius < MinLandscapeRadius ? MinLandscapeRadius
@@ -105,10 +136,13 @@ namespace DaraletPlayer.Feed {
                 return "Draw distance off";
             }
 
-            return $"Scenery {ClampedSceneryRadius} at {ClampedSceneryDensity}%, landscape "
+            return $"Scenery {ClampedSceneryRadius} at {ClampedSceneryDensity}%, "
+                + (ClampedGroundRadius > ClampedSceneryRadius ? $"ground {ClampedGroundRadius}, " : "") + $"landscape "
                 + (ClampedLandscapeRadius == 0 ? "game's" : ClampedLandscapeRadius.ToString())
                 + $", detail {(ClampedDetailDistance == 0 ? "game's" : ClampedDetailDistance + " m")}"
                 + $", far {ClampedLowDetailDistance} m" + (Billboards ? ", billboards" : "")
+                + (ClampedFarTrees > 0 ? $", 3D trees {ClampedFarTrees} rings" : "")
+                + (FarBuildings ? ", far buildings" : "")
                 + (ClampedFog < 100 ? $", fog {ClampedFog}%" : "");
         }
 
@@ -120,11 +154,14 @@ namespace DaraletPlayer.Feed {
         private void SetDefaults() {
             On = false;
             SceneryRadius = GameSceneryRadius;
+            GroundRadius = 0;
             LandscapeRadius = 0;
             DetailDistance = 0;
             LowDetailDistance = 0;
             SceneryDensity = 100;
             Billboards = false;
+            FarTrees = 0;
+            FarBuildings = false;
             Fog = 100;
         }
     }

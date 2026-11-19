@@ -42,6 +42,15 @@ namespace DaraletPlayer.Ui {
         private bool disposed;
 
         /// <summary>
+        /// Until when a chat step's answer is noted in results.txt: what /loc says (for /teleloc back to the same
+        /// place and facing), what a command says went wrong.
+        /// </summary>
+        private DateTime noteChatUntil = DateTime.MinValue;
+
+        /// <summary>RenderFrames since a probe started: it's finished on the next one.</summary>
+        private int probeFrames;
+
+        /// <summary>
         /// Set by restart: the game is closing, so nothing more is run in it. The first build looked for run.txt again
         /// in the moment before the game closed, started the steps meant for after the relaunch, and the relaunched game
         /// then took the half-run step for a crash.
@@ -53,6 +62,20 @@ namespace DaraletPlayer.Ui {
             this.drawDistance = drawDistance;
             this.changed = changed;
             CoreManager.Current.RenderFrame += Core_RenderFrame;
+            CoreManager.Current.ChatBoxMessage += Core_ChatBoxMessage;
+        }
+
+        private void Core_ChatBoxMessage(object sender, ChatTextInterceptEventArgs e) {
+            try {
+                // not the plugins' own replies (DAP2|..., DAA2|...), which the feed hides from chat anyway
+                if (DateTime.Now < noteChatUntil && !string.IsNullOrWhiteSpace(e.Text)
+                    && !ReplyAssembler.LooksLikeReplyPiece(e.Text) && !e.Text.StartsWith("DA")) {
+                    Result("chat reply: " + e.Text.Trim());
+                }
+            }
+            catch (Exception ex) {
+                PluginCore.LogFile("[test-run] chat reply: " + ex.Message);
+            }
         }
 
         private void Core_RenderFrame(object sender, EventArgs e) {
@@ -143,7 +166,10 @@ namespace DaraletPlayer.Ui {
                 case "set":
                     Set(step.Field, step.Number);
                     Result($"set {step.Field} {step.Number.ToString(CultureInfo.InvariantCulture)}: "
-                        + settings.Data.DrawDistance.Summary());
+                        + settings.Data.DrawDistance.Summary() + "; " + settings.Data.Shading.Summary() + "; "
+                        + settings.Data.Water.Summary() + "; " + settings.Data.Image.Summary() + "; "
+                        + settings.Data.Grass.Summary() + "; " + settings.Data.SunShadows.Summary() + "; "
+                        + settings.Data.LampLight.Summary());
                     return true;
                 case "option": {
                     var option = uint.Parse(step.Field);
@@ -159,17 +185,116 @@ namespace DaraletPlayer.Ui {
                     return true;
                 }
                 case "chat":
-                    CoreManager.Current.Actions.InvokeChatParser(step.Words);
                     Result("chat: " + step.Words);
+                    noteChatUntil = DateTime.Now.AddSeconds(2);
+                    CoreManager.Current.Actions.InvokeChatParser(step.Words);
                     return true;
                 case "log":
                     Result(step.Words);
                     return true;
+                case "find": {
+                    // where things of a name are (a test run's way to a place by its NPCs): each nearby object whose name
+                    // has the words, with its landcell and place in its landblock, as /teleloc takes them
+                    var found = 0;
+
+                    foreach (var wo in CoreManager.Current.WorldFilter.GetLandscape()) {
+                        // by name or by template (an NPC's title under its name, "Elder"), which Decal only has once
+                        // the thing's been appraised
+                        var template = wo.Values((Decal.Adapter.Wrappers.StringValueKey)5, "");
+
+                        if ((wo.Name ?? "").IndexOf(step.Words, StringComparison.OrdinalIgnoreCase) < 0
+                            && template.IndexOf(step.Words, StringComparison.OrdinalIgnoreCase) < 0) {
+                            continue;
+                        }
+
+                        var raw = wo.RawCoordinates();
+                        var cell = unchecked((uint)wo.Values(Decal.Adapter.Wrappers.LongValueKey.Landblock, 0));
+                        var titled = template.Length > 0 ? $"{wo.Name} ({template})" : wo.Name;
+                        Result($"find: {titled} at {cell:X8} [{raw.X:0.00} {raw.Y:0.00} {raw.Z:0.00}]");
+
+                        if (++found >= 10) {
+                            break;
+                        }
+                    }
+
+                    if (found == 0) {
+                        // appraised now, so a find after a short wait can match their templates
+                        var asked = 0;
+
+                        foreach (var wo in CoreManager.Current.WorldFilter.GetLandscape()) {
+                            if ((wo.ObjectClass == Decal.Adapter.Wrappers.ObjectClass.Npc
+                                    || wo.ObjectClass == Decal.Adapter.Wrappers.ObjectClass.Vendor) && !wo.HasIdData
+                                && asked < 30) {
+                                CoreManager.Current.Actions.RequestId(wo.Id);
+                                asked++;
+                            }
+                        }
+
+                        Result($"find: nothing called {step.Words} nearby; appraising {asked} NPCs for their templates");
+                    }
+
+                    return true;
+                }
                 case "restart":
                     Restart();
                     return false;
+                case "kill":
+                    Restart(kill: true);
+                    return false;
+                case "where": {
+                    // where you are, for coming back (a test run's record; the game's /loc only says it in chat)
+                    var actions = CoreManager.Current.Actions;
+                    Result($"where: landcell {unchecked((uint)actions.Landcell):X8} at {actions.LocationX:0.00} "
+                        + $"{actions.LocationY:0.00} {actions.LocationZ:0.00}, heading {actions.Heading:0}");
+                    return true;
+                }
                 case "compare":
                     Result(drawDistance.CompareScenery());
+                    return true;
+                case "camera": {
+                    // where the camera is, as the game keeps it (the Position at 0x81FF10: cell +4, origin +0x3C) and as the
+                    // device has it (the view's inverse), against your character: which landblock the device's world is
+                    // measured from
+                    var device = UtilityBelt.Service.UBService.Huds.D3Ddevice;
+                    var actions = CoreManager.Current.Actions;
+                    unsafe {
+                        var cell = *(uint*)(0x81FF10 + 4);
+                        var x = *(float*)(0x81FF10 + 0x3C);
+                        var y = *(float*)(0x81FF10 + 0x40);
+                        var z = *(float*)(0x81FF10 + 0x44);
+                        var inverse = Microsoft.DirectX.Matrix.Invert(device.Transform.View);
+                        Result($"camera: the game's cell {cell:X8} at {x:0.00} {y:0.00} {z:0.00}; the device's at "
+                            + $"{inverse.M41:0.00} {inverse.M42:0.00} {inverse.M43:0.00}; you {unchecked((uint)actions.Landcell):X8} "
+                            + $"at {actions.LocationX:0.00} {actions.LocationY:0.00} {actions.LocationZ:0.00}");
+                    }
+
+                    return true;
+                }
+                case "lights":
+                    // the game's own lights near the camera (Ui/GameLights.cs)
+                    Result("lights: " + GameLights.Describe(unchecked((uint)CoreManager.Current.Actions.Landcell) >> 16));
+                    return true;
+                case "probe": {
+                    // the game's Direct3D calls over one frame (Ui/DrawProbe.cs), finished on the next RenderFrame
+                    var device = UtilityBelt.Service.UBService.Huds.D3Ddevice;
+
+                    if (device == null) {
+                        Result("probe: no device");
+                        return true;
+                    }
+
+                    DrawProbe.Start(device);
+                    probeFrames = 0;
+                    return true;
+                }
+                case "face":
+                    // the game turns the character itself, over a moment: a wait after lets it finish
+                    CoreManager.Current.Actions.FaceHeading(step.Number, true);
+                    Result($"face {step.Number:0}");
+                    return true;
+                case "walk":
+                    // the game's autorun, stopped once the time is up (Finished)
+                    CoreManager.Current.Actions.SetAutorun(true);
                     return true;
                 case "screenshot": {
                     var name = string.Concat(step.Words.Split(Path.GetInvalidFileNameChars()));
@@ -190,6 +315,25 @@ namespace DaraletPlayer.Ui {
             switch (step.Kind) {
                 case "wait":
                     return elapsed >= step.Number;
+                case "probe":
+                    if (!DrawProbe.Running || ++probeFrames < 2) {
+                        return !DrawProbe.Running;
+                    }
+
+                    Result("probe: " + DrawProbe.Finish());
+                    return true;
+                case "walk": {
+                    if (elapsed < step.Number) {
+                        return false;
+                    }
+
+                    var actions = CoreManager.Current.Actions;
+                    actions.SetAutorun(false);
+                    Result($"walked {step.Number:0} s: landcell {unchecked((uint)actions.Landcell):X8} at "
+                        + $"{actions.LocationX:0.00} {actions.LocationY:0.00} {actions.LocationZ:0.00}, "
+                        + $"heading {actions.Heading:0}");
+                    return true;
+                }
                 case "measure":
                     if (elapsed < step.Number) {
                         return false;
@@ -245,11 +389,116 @@ namespace DaraletPlayer.Ui {
                 case "far":
                     options.LowDetailDistance = value;
                     break;
+                case "shading":
+                    settings.Data.Shading.On = value != 0;
+                    break;
+                case "occlusion":
+                    settings.Data.Shading.Occlusion = value;
+                    break;
+                case "shadows":
+                    settings.Data.Shading.Shadows = value;
+                    break;
+                case "water":
+                    settings.Data.Water.On = value != 0;
+                    break;
+                case "waterstrength":
+                    settings.Data.Water.Strength = value;
+                    break;
+                case "ripples":
+                    settings.Data.Water.Ripples = value != 0;
+                    break;
+                case "ripplesize":
+                    settings.Data.Water.RippleSize = value;
+                    break;
+                case "fresnel":
+                    settings.Data.Water.Fresnel = value != 0;
+                    break;
+                case "glints":
+                    settings.Data.Water.Glints = value != 0;
+                    break;
+                case "blur":
+                    settings.Data.Water.Blur = value != 0;
+                    break;
+                case "softshore":
+                    settings.Data.Water.SoftShore = value != 0;
+                    break;
+                case "antialias":
+                    settings.Data.Image.AntiAlias = value != 0;
+                    break;
+                case "sharpen":
+                    settings.Data.Image.Sharpen = value;
+                    break;
+                case "grass":
+                    settings.Data.Grass.On = value != 0;
+                    break;
+                case "grassdensity":
+                    settings.Data.Grass.Density = value;
+                    break;
+                case "grassdistance":
+                    settings.Data.Grass.Distance = value;
+                    break;
+                case "grassheight":
+                    settings.Data.Grass.Height = value;
+                    break;
+                case "reeds":
+                    settings.Data.Grass.Reeds = value != 0;
+                    break;
+                case "keptnear":
+                    settings.Data.Grass.KeptNearTowns = value != 0;
+                    break;
+                case "wind":
+                    settings.Data.Grass.Wind = value != 0;
+                    break;
+                case "sunshadows":
+                    settings.Data.SunShadows.On = value != 0;
+                    break;
+                case "sunstrength":
+                    settings.Data.SunShadows.Strength = (int)value;
+                    break;
+                case "sundistance":
+                    settings.Data.SunShadows.Distance = (int)value;
+                    break;
+                case "sunreplay":
+                    DepthShading.SkipReplay = value == 0;
+                    break;
+                case "lamps":
+                    settings.Data.LampLight.On = value != 0;
+                    break;
+                case "lampstrength":
+                    settings.Data.LampLight.Strength = (int)value;
+                    break;
+                case "lampshadows":
+                    settings.Data.LampLight.Shadows = value != 0;
+                    break;
+                case "glow":
+                    settings.Data.Image.Glow = (int)value;
+                    break;
+                case "sunsoftness":
+                    settings.Data.SunShadows.Softness = (int)value;
+                    break;
+                case "anisotropy":
+                    settings.Data.Image.Anisotropy = (int)value;
+                    break;
+                case "depthview":
+                    DepthShading.DebugView = value;
+                    break;
                 case "fog":
                     options.Fog = value;
                     break;
                 case "billboards":
                     options.Billboards = value != 0;
+                    break;
+                case "ground":
+                    options.GroundRadius = (int)value;
+                    break;
+                case "portalreload":
+                    DrawDistance.PortalReload = value != 0;
+                    break;
+                case "fartrees":
+                    options.FarTrees = (int)value;
+                    break;
+                case "farbuildings":
+                    options.FarBuildings = value != 0;
                     break;
             }
 
@@ -265,7 +514,11 @@ namespace DaraletPlayer.Ui {
         }
 
         /// <summary>The steps after this one written back for after the relaunch, and the game exited.</summary>
-        private void Restart() {
+        /// <remarks>
+        /// With kill, the game's process is ended outright instead of asked to exit: a restart's exit once never came
+        /// (memory short after many hot reloads), and the game runs as administrator, so nothing outside can end it.
+        /// </remarks>
+        private void Restart(bool kill = false) {
             var rest = steps.Skip(index + 1).Select(s => s.Text).ToList();
 
             if (rest.Count > 0) {
@@ -279,9 +532,14 @@ namespace DaraletPlayer.Ui {
                 File.Delete(ProgressFile);
             }
 
-            Result($"restart: exiting the game, {rest.Count} steps left for after Auto relaunch");
+            Result($"{(kill ? "kill" : "restart")}: ending the game, {rest.Count} steps left for after Auto relaunch");
             steps = null;
             exiting = true;
+
+            if (kill) {
+                System.Diagnostics.Process.GetCurrentProcess().Kill();
+            }
+
             ClientMenu.ExitGame();
         }
 
@@ -309,6 +567,27 @@ namespace DaraletPlayer.Ui {
 
             disposed = true;
             CoreManager.Current.RenderFrame -= Core_RenderFrame;
+            CoreManager.Current.ChatBoxMessage -= Core_ChatBoxMessage;
+
+            // the device's own calls back before this copy goes
+            try {
+                if (DrawProbe.Running) {
+                    DrawProbe.Finish();
+                }
+            }
+            catch (Exception ex) {
+                PluginCore.LogFile("[test] couldn't end the probe: " + ex.Message);
+            }
+
+            // stopped mid-walk, the character would run on by itself
+            try {
+                if (steps != null && index < steps.Count && steps[index].Kind == "walk") {
+                    CoreManager.Current.Actions.SetAutorun(false);
+                }
+            }
+            catch (Exception ex) {
+                PluginCore.LogFile("[test] couldn't stop walking: " + ex.Message);
+            }
 
             // a hot reload (or the plugin stopping) mid-run isn't a crash: the step running and those after it are
             // handed to the next copy, which starts them afresh. The first build left progress.txt, and the new copy

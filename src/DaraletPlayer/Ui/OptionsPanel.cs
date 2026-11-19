@@ -45,7 +45,10 @@ namespace DaraletPlayer.Ui {
             // works whether or not this window replaces the game's panel: its settings are only drawn here
             drawDistance = new DrawDistance(settings);
             frameRate = new FrameRateWindow(settings);
-            testRunner = new TestRunner(settings, drawDistance, Changed);
+            // before the shading, so its occlusion darkens the grass too: Decal calls RenderFrame in subscription order
+            grass = new Grass(settings);
+            depthShading = new DepthShading(settings);
+            testRunner = new TestRunner(settings, drawDistance, Commit);
             CoreManager.Current.RenderFrame += Core_RenderFrame;
         }
 
@@ -157,6 +160,8 @@ namespace DaraletPlayer.Ui {
             }
 
             try {
+                grass.Dispose();
+                depthShading.Dispose();
                 testRunner.Dispose();
                 frameRate.Dispose();
             }

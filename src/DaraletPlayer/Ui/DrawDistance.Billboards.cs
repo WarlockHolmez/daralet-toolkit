@@ -46,6 +46,13 @@ namespace DaraletPlayer.Ui {
         private int billboardDensity = -1;
         private string billboardKey;
         private uint billboardHome;
+
+        /// <summary>
+        /// The landblock the blocks being worked out are around: it only becomes billboardHome once their buffers are
+        /// made. Set at once, the old buffers were drawn a landblock off until the new ones were ready (seen in the game,
+        /// November 2026: crossing a landblock's edge, the far forest vanished and came back a few steps on).
+        /// </summary>
+        private uint pendingHome;
         private bool billboardsToBuild;
         private VertexBuffer billboardBuffer;
         private readonly List<(Texture Texture, int Start, int Triangles)> billboardBatches =
@@ -66,6 +73,9 @@ namespace DaraletPlayer.Ui {
                 return;
             }
 
+            // your character's landblock: the game's own full-detail ring is round it (the load point), so the hole
+            // left for the real scenery is too; drawn shifted into the camera's frame (RenderOrigin), which near an
+            // edge is a landblock away
             var home = unchecked((uint)CoreManager.Current.Actions.Landcell) >> 16;
 
             // indoors (a dungeon's cells) there's no landscape to stand billboards on
@@ -78,7 +88,9 @@ namespace DaraletPlayer.Ui {
                 return;
             }
 
-            var key = $"{home:X4} {patchedRadius} {landscape} {appliedDensity}";
+            var key = $"{home:X4} {patchedRadius} {TreeRing} {skippedVersion} "
+                + $"{landscape} {appliedDensity} {Options.ClampedFarTrees} "
+                + Options.Billboards + " " + Options.FarBuildings;
 
             if (key == billboardKey) {
                 return;
@@ -101,24 +113,34 @@ namespace DaraletPlayer.Ui {
                     var x = hx + dx;
                     var y = hy + dy;
 
-                    if (ring <= patchedRadius || x < 0 || y < 0 || x > 0xFE || y > 0xFE) {
+                    if (x < 0 || y < 0 || x > 0xFE || y > 0xFE) {
                         continue;
                     }
 
-                    blocks.Add((uint)(x << 8 | y));
+                    // past the full-detail rings, and inside them past Scenery where the game made no trees (Ground
+                    // detail, DrawDistance.Ground.cs); a block walked away from keeps its real ones, and isn't doubled
+                    var id = (uint)(x << 8 | y);
+
+                    if (ring <= TreeRing || ring <= patchedRadius && !TreesSkipped(id)) {
+                        continue;
+                    }
+
+                    blocks.Add(id);
                 }
             }
 
             billboardBlocks = blocks;
-            billboardHome = home;
+            pendingHome = home;
             blocksToWorkOut.Clear();
 
-            foreach (var block in blocks.Where(b => !blockScenery.ContainsKey(b))) {
+            var missing = blocks.Where(b => !blockScenery.ContainsKey(b) || !blockBuildings.ContainsKey(b));
+
+            foreach (var block in missing) {
                 blocksToWorkOut.Enqueue(block);
             }
 
             billboardsToBuild = true;
-            PluginCore.LogFile($"[billboards] {blocks.Count} landblocks from ring {patchedRadius + 1} to {landscape}, "
+            PluginCore.LogFile($"[billboards] {blocks.Count} landblocks from ring {TreeRing + 1} to {landscape}, "
                 + $"{blocksToWorkOut.Count} to work out");
         }
 
@@ -144,6 +166,7 @@ namespace DaraletPlayer.Ui {
                     var id = block << 16;
                     var land = cells.ReadFromDat<ACE.DatLoader.FileTypes.CellLandblock>(id | 0xFFFF);
                     blockHeights[block] = land?.Height.ToList();
+                    blockBuildings[block] = BuildingsOf(cells, id);
                     blockScenery[block] = land == null ? new List<PlacedScenery>()
                         : SceneryLayout.Place(id, land.Terrain, land.Height, region.LandDefs.LandHeightTable, ScenesFor,
                             sceneId => ObjectsOf(portal, sceneId), appliedDensity, BuildingCells(cells, id));
@@ -159,6 +182,24 @@ namespace DaraletPlayer.Ui {
                     BuildBillboards(device, portal);
                 }
 
+                // drawn inside the game's frame, before its see-through things, when that's hooked (Ui/WorldPass.cs)
+                if (!WorldPass.Hooked) {
+                    DrawBillboards(device);
+                }
+            }
+            catch (Exception ex) {
+                billboardsFailed = true;
+                PluginCore.LogFile("[billboards] stopped for the session: " + ex);
+            }
+        }
+
+        /// <summary>The billboards drawn from inside the game's frame (Ui/WorldPass.cs).</summary>
+        private void DrawBillboardsInWorldPass(Device device) {
+            if (disposed || billboardKey == null || billboardsFailed) {
+                return;
+            }
+
+            try {
                 DrawBillboards(device);
             }
             catch (Exception ex) {
@@ -171,9 +212,12 @@ namespace DaraletPlayer.Ui {
         private void BuildBillboards(Device device, ACE.DatLoader.DatDatabase portal) {
             billboardsToBuild = false;
             var byModel = new Dictionary<BillboardModel, List<CustomVertex.PositionNormalTextured>>();
-            var hx = (int)(billboardHome >> 8);
-            var hy = (int)(billboardHome & 0xFF);
+            var farByModel = new Dictionary<FarTreeModel, List<FarTreeInstance>>();
+            var showBillboards = Options.Billboards;
+            var hx = (int)(pendingHome >> 8);
+            var hy = (int)(pendingHome & 0xFF);
             var objects = 0;
+            farBuildingCount = 0;
 
             foreach (var block in billboardBlocks) {
                 if (!blockScenery.TryGetValue(block, out var placed)) {
@@ -189,7 +233,36 @@ namespace DaraletPlayer.Ui {
                 var step = SceneryLayout.DetailStep(ring, patchedRadius);
                 blockHeights.TryGetValue(block, out var heights);
 
+                var farRing = IsFarTreeRing(ring);
+
+                if (Options.FarBuildings && ring > patchedRadius) {
+                    AddFarBuildings(block, step, heights, offsetX, offsetY, portal, device, farByModel);
+                }
+
                 foreach (var p in placed) {
+                    if (farRing) {
+                        // the game's own model, drawn by the plugin (DrawDistance.FarTrees.cs)
+                        var tree = farTreeModels.Get(p.Model, portal, device);
+
+                        if (tree == null) {
+                            continue;
+                        }
+
+                        if (!farByModel.TryGetValue(tree, out var copies)) {
+                            copies = new List<FarTreeInstance>();
+                            farByModel[tree] = copies;
+                        }
+
+                        var treeZ = heights == null || step == 1 ? p.Z : SceneryLayout.Ground(block << 16, heights,
+                            region.LandDefs.LandHeightTable, p.X, p.Y, step).Z;
+                        copies.Add(FarTree(offsetX + p.X, offsetY + p.Y, treeZ, p.Yaw, p.Scale));
+                        continue;
+                    }
+
+                    if (!showBillboards) {
+                        continue;
+                    }
+
                     var model = billboardModels.Get(p.Model, portal, device);
 
                     if (model == null) {
@@ -209,6 +282,8 @@ namespace DaraletPlayer.Ui {
             }
 
             ClearBillboards();
+            billboardHome = pendingHome;
+            BuildFarTrees(device, farByModel);
             var all = byModel.SelectMany(kv => kv.Value).ToArray();
 
             if (all.Length == 0) {
@@ -228,6 +303,11 @@ namespace DaraletPlayer.Ui {
             }
 
             billboardCount = objects;
+            if (farBuildingCount > 0) {
+                PluginCore.LogFile($"[far-buildings] {farBuildingCount} buildings and placed objects past ring "
+                    + $"{patchedRadius}");
+            }
+
             PluginCore.LogFile($"[billboards] {objects} billboards in {billboardBatches.Count} models, "
                 + $"{all.Length / 3} triangles, {FreeMegabytes()} MB free");
         }
@@ -267,25 +347,38 @@ namespace DaraletPlayer.Ui {
         }
 
         private void DrawBillboards(Device device) {
-            if (billboardBuffer == null || billboardBatches.Count == 0) {
+            var anyBillboards = billboardBuffer != null && billboardBatches.Count > 0;
+
+            if (!anyBillboards && farTreeInstances == null) {
                 return;
             }
 
-            // the frame the world's drawn in is the landblock you're in: one crossed since the buffer was made waits
-            if (unchecked((uint)CoreManager.Current.Actions.Landcell) >> 16 != billboardHome) {
-                return;
-            }
+            // the device's world is measured from the camera's landblock (RenderOrigin); one crossed into since the buffers
+            // were made is a whole landblock's shift, put on them until they're made again (once a second), so the far
+            // scenery neither jumps nor blinks out
+            var origin = RenderOrigin.Landblock;
+            var shift = Matrix.Translation(
+                ((int)(billboardHome >> 8) - (int)(origin >> 8)) * SceneryLayout.BlockSize, 0,
+                ((int)(billboardHome & 0xFF) - (int)(origin & 0xFF)) * SceneryLayout.BlockSize);
 
             if (CameraSwapped(device)) {
                 return;
             }
 
-            savedState = savedState ?? new StateBlock(device, StateBlockType.All);
+            DrawFarTrees(device, shift);
+
+            if (!anyBillboards) {
+                return;
+            }
+
+            // made and let go each frame: Direct3D won't reset the device while a state block lives, and one kept
+            // from frame to frame hung the game when it reset on exiting (November 2026)
+            savedState = new StateBlock(device, StateBlockType.All);
             LogDeviceLights(device);
             savedState.Capture();
 
             try {
-                device.Transform.World = Matrix.Identity;
+                device.Transform.World = shift;
                 device.VertexFormat = BillboardFormat;
                 device.SetStreamSource(0, billboardBuffer, 0);
                 device.RenderState.ZBufferEnable = true;
@@ -320,6 +413,8 @@ namespace DaraletPlayer.Ui {
             }
             finally {
                 savedState.Apply();
+                savedState.Dispose();
+                savedState = null;
             }
         }
 
@@ -330,12 +425,12 @@ namespace DaraletPlayer.Ui {
                 m.M11, m.M12, m.M13, m.M14, m.M21, m.M22, m.M23, m.M24,
                 m.M31, m.M32, m.M33, m.M34, m.M41, m.M42, m.M43, m.M44,
             };
-            var actions = CoreManager.Current.Actions;
-            return CombatProjection.IsSwapped(view, (float)actions.LocationX, (float)actions.LocationY,
-                (float)actions.LocationZ);
+            var you = RenderOrigin.Player();
+            return CombatProjection.IsSwapped(view, you.X, you.Z, you.Y);
         }
 
         private void ClearBillboards() {
+            ClearFarTrees();
             billboardBuffer?.Dispose();
             billboardBuffer = null;
             billboardBatches.Clear();
@@ -344,6 +439,7 @@ namespace DaraletPlayer.Ui {
 
         private void DisposeBillboards() {
             ClearBillboards();
+            DisposeFarTrees();
             savedState?.Dispose();
             savedState = null;
             billboardModels.Dispose();

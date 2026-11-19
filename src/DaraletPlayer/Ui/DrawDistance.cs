@@ -2,6 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using DaraletPlayer.Feed;
 using Decal.Adapter;
+using Microsoft.DirectX.Direct3D;
 
 namespace DaraletPlayer.Ui {
     /// <summary>
@@ -32,6 +33,9 @@ namespace DaraletPlayer.Ui {
     /// alone. Far scenery at low detail is DrawDistance.Lod.cs. `[draw-distance]` lines in log.txt. Untested in the game when written.
     /// </summary>
     internal sealed partial class DrawDistance : IDisposable {
+        /// <summary>Kept so the same one can be taken out of WorldPass.</summary>
+        private readonly Action<Device> billboardsInWorldPass;
+
         private const uint SmartBoxPointer = 0x83DA58;
         private const uint SetMidRadiusAddress = 0x4531C0;
         private const int SmartBoxLScape = 0xB0;
@@ -63,6 +67,8 @@ namespace DaraletPlayer.Ui {
             this.settings = settings;
             CoreManager.Current.RenderFrame += Core_RenderFrame;
             ListenForPortals();
+            billboardsInWorldPass = DrawBillboardsInWorldPass;
+            WorldPass.Add(billboardsInWorldPass);
         }
 
         private DrawDistanceOptions Options => settings.Data.DrawDistance;
@@ -79,6 +85,9 @@ namespace DaraletPlayer.Ui {
         public string Loaded => $"scenery {patchedRadius} at {appliedDensity}%";
 
         /// <summary>The landscape radius these settings load: theirs, else the game's Landscape Draw Distance.</summary>
+        /// <summary>The game's own Landscape Draw Distance.</summary>
+        public unsafe int GameLandscape => *(int*)GameLandscapeRadius;
+
         public unsafe int LandscapeFor(DrawDistanceOptions options) {
             return options.ClampedLandscapeRadius > 0 ? options.ClampedLandscapeRadius : *(int*)GameLandscapeRadius;
         }
@@ -106,6 +115,7 @@ namespace DaraletPlayer.Ui {
                 }
 
                 NoteFrame();
+                UpdateProgressHud();
 
                 if (CoreManager.Current.CharacterFilter.LoginStatus == 3) {
                     BillboardFrame();
@@ -115,7 +125,8 @@ namespace DaraletPlayer.Ui {
                     return;
                 }
 
-                nextLook = DateTime.UtcNow.AddSeconds(1);
+                // four times a second while stepping up, so a step follows the last as soon as it's settled
+                nextLook = DateTime.UtcNow.AddSeconds(AtTarget ? 1 : 0.25);
                 Apply();
             }
             catch (Exception ex) {
@@ -131,12 +142,14 @@ namespace DaraletPlayer.Ui {
             var ringsChanged = false;
             var gameLandscape = *(int*)GameLandscapeRadius;
             var wantedLandscape = options.ClampedLandscapeRadius > 0 ? options.ClampedLandscapeRadius : gameLandscape;
-            var wanted = Cost(options.ClampedSceneryRadius, options.ClampedSceneryDensity, wantedLandscape);
+            var wanted = Cost(options.ClampedSceneryRadius, options.ClampedSceneryDensity, options.ClampedGroundRadius,
+                wantedLandscape);
             MeasureLoad();
 
             if (loadedCost <= 0) {
                 // at login what's loaded is the game's own: the first far settings are measured against it
-                loadedCost = Cost(DrawDistanceOptions.GameSceneryRadius, 100, gameLandscape);
+                loadedCost = Cost(DrawDistanceOptions.GameSceneryRadius, 100, DrawDistanceOptions.GameSceneryRadius,
+                    gameLandscape);
             }
 
             var costBefore = loadedCost;
@@ -146,9 +159,16 @@ namespace DaraletPlayer.Ui {
                 // too little memory to draw further: what's loaded stays as it is, and the rest still applies; as far
                 // as it'll go, so a test run's settle doesn't wait for what won't come
                 AtTarget = true;
+                NoteProgress(0, 0, 0, 0, true);
                 ApplyDetail(options.ClampedDetailDistance);
                 ApplyLowDetail(options.ClampedLowDetailDistance);
                 ApplyFog(options.ClampedFog);
+
+                // the billboards still follow you: after a teleport with memory short, they never came back
+                var box = *(IntPtr*)SmartBoxPointer;
+                var held = box == IntPtr.Zero ? IntPtr.Zero : *(IntPtr*)((byte*)box + SmartBoxLScape);
+                UpdateBillboards(options.FarScenery && !inPortal && held != IntPtr.Zero,
+                    held != IntPtr.Zero ? *(int*)held : 0);
                 return;
             }
 
@@ -166,7 +186,9 @@ namespace DaraletPlayer.Ui {
             // scenery at the game's (only the nine near blocks' trees), and then it steps up again in place (the user's
             // call, November 2026)
             var densityChanging = wantedDensity != appliedDensity;
-            var targetScenery = aiming && !densityChanging ? options.ClampedSceneryRadius
+            // the full-detail rings go out to Ground detail; the game's trees stop at Scenery (DrawDistance.Ground.cs)
+            treeRadius = aiming ? options.ClampedSceneryRadius : DrawDistanceOptions.MaxSceneryRadius;
+            var targetScenery = aiming && !densityChanging ? options.ClampedGroundRadius
                 : DrawDistanceOptions.GameSceneryRadius;
             var targetLandscape = aiming ? wantedLandscape : gameLandscape;
             var loadedLandscape = lscape != IntPtr.Zero ? *(int*)lscape : targetLandscape;
@@ -199,6 +221,8 @@ namespace DaraletPlayer.Ui {
                 return;
             }
 
+            NoteProgress(patchedRadius, loadedLandscape, targetScenery, targetLandscape, AtTarget);
+
             if (scenery != patchedRadius && !broken) {
                 if (!PatchRings(scenery)) {
                     return;
@@ -229,8 +253,10 @@ namespace DaraletPlayer.Ui {
                 nextStepAt = DateTime.UtcNow.AddSeconds(DrawDistanceRamp.StepSeconds);
             }
 
+            KeepOnRoadHook(appliedDensity < 100 || aiming && options.ClampedGroundRadius > options.ClampedSceneryRadius);
+
             // what's loaded now, a step on the way or all of it, for the memory estimate and the way back
-            var cost = Cost(scenery, appliedDensity, landscape);
+            var cost = Cost(Math.Min(scenery, treeRadius), appliedDensity, scenery, landscape);
 
             if (aiming && scenery == targetScenery && landscape == targetLandscape) {
                 NoteLoaded(options.ClampedSceneryRadius, options.ClampedSceneryDensity, options.ClampedLandscapeRadius,
@@ -252,11 +278,15 @@ namespace DaraletPlayer.Ui {
                 LoadStarting(costBefore);
                 RefreshBlocks(lscape);
             }
+            else if (lscape != IntPtr.Zero && !broken && !inPortal) {
+                // nothing loading this pass: blocks come into the trees' rings as you walk get the game's trees
+                GrowTrees(lscape);
+            }
 
             ApplyDetail(on ? options.ClampedDetailDistance : 0);
             ApplyLowDetail(on ? options.ClampedLowDetailDistance : 0);
-            ApplyFog(on ? options.ClampedFog : 100);
-            UpdateBillboards(on && options.Billboards && !inPortal && lscape != IntPtr.Zero,
+            ApplyFog(broken ? 100 : options.ClampedFog);
+            UpdateBillboards(on && options.FarScenery && !inPortal && lscape != IntPtr.Zero,
                 lscape != IntPtr.Zero ? *(int*)lscape : 0);
         }
 
@@ -336,6 +366,8 @@ namespace DaraletPlayer.Ui {
 
             disposed = true;
             CoreManager.Current.RenderFrame -= Core_RenderFrame;
+            WorldPass.Remove(billboardsInWorldPass);
+            DisposeProgress();
             StopListeningForPortals();
 
             // the game's own back, whatever the reason this is going: a hot reload, the plugin turned off. The landscape is

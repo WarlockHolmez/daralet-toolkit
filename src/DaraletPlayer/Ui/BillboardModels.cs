@@ -14,7 +14,7 @@ namespace DaraletPlayer.Ui {
     /// <summary>
     /// A billboard's picture of each scenery model (billboards stage 2 in the plugin): the model read from the portal dat
     /// (a Setup's parts placed by its first placement frame and default scales, or one GfxObj), its surfaces' textures
-    /// decoded (Feed/TextureDecode.cs), drawn side on by Feed/ImpostorRaster.cs, and made a Direct3D texture (A8R8G8B8,
+    /// decoded (Feed/TextureDecode.cs, every format a dat can hold), drawn side on by Feed/ImpostorRaster.cs, and made a Direct3D texture (A8R8G8B8,
     /// managed, so it outlives a device reset). Models under MinHeight (the far scenery's ground scatter: a single flat
     /// triangle of snow, two thirds of all the objects round the user) get none. One picture a model, made the first time
     /// it's wanted, on the game's thread (the dat readers aren't safe on another). Untested in the game when written.
@@ -55,7 +55,7 @@ namespace DaraletPlayer.Ui {
         }
 
         /// <summary>The picture and its smaller copies (Feed/MipChain.cs: far billboards sparkled without them).</summary>
-        private static DxTexture MakeTexture(Device device, uint[] pixels, int width, int height) {
+        internal static DxTexture MakeTexture(Device device, uint[] pixels, int width, int height) {
             var levels = MipChain.Levels(pixels, width, height);
             levels.Insert(0, (pixels, width, height));
             var texture = new DxTexture(device, width, height, levels.Count, Usage.None, Format.A8R8G8B8, Pool.Managed);
@@ -144,10 +144,24 @@ namespace DaraletPlayer.Ui {
                 return number;
             }
 
+            var pixels = SurfacePixels(portal, surfaceId, out var width, out var height, out var cutOut);
+            number = raster.AddTexture(pixels, width, height, cutOut);
+            known[surfaceId] = number;
+            return number;
+        }
+
+        /// <summary>
+        /// A surface's picture, decoded (0xAARRGGBB rows from the top; grey for a format not decoded, one pixel for a
+        /// plain colour), and whether it's cut out by alpha (a clip map, as leaves are). Shared with the far trees
+        /// (FarTreeModels).
+        /// </summary>
+        internal static uint[] SurfacePixels(DatDatabase portal, uint surfaceId, out int width, out int height,
+            out bool cutOut) {
             var surface = portal.ReadFromDat<ACE.DatLoader.FileTypes.Surface>(surfaceId);
-            var cutOut = surface.Type.HasFlag(SurfaceType.Base1ClipMap);
+            cutOut = surface.Type.HasFlag(SurfaceType.Base1ClipMap);
             uint[] pixels = null;
-            int width = 1, height = 1;
+            width = 1;
+            height = 1;
 
             if (surface.OrigTextureId != 0) {
                 var images = portal.ReadFromDat<SurfaceTexture>(surface.OrigTextureId);
@@ -155,36 +169,39 @@ namespace DaraletPlayer.Ui {
                 width = image.Width;
                 height = image.Height;
 
-                switch (image.Format) {
-                    case SurfacePixelFormat.PFID_DXT1:
-                        pixels = TextureDecode.Dxt1(image.SourceData, width, height);
-                        break;
-                    case SurfacePixelFormat.PFID_DXT5:
-                        pixels = TextureDecode.Dxt5(image.SourceData, width, height);
-                        break;
-                    case SurfacePixelFormat.PFID_INDEX16: {
-                        var paletteId = surface.OrigPaletteId != 0 ? surface.OrigPaletteId : image.DefaultPaletteId ?? 0;
-                        pixels = TextureDecode.Index16(image.SourceData, width, height,
-                            portal.ReadFromDat<Palette>(paletteId)?.Colors);
-                        break;
-                    }
+                // every format a dat's texture can be in (a season's new trees may use any)
+                IReadOnlyList<uint> palette = null;
+
+                if (image.Format == SurfacePixelFormat.PFID_INDEX16 || image.Format == SurfacePixelFormat.PFID_P8) {
+                    var paletteId = surface.OrigPaletteId != 0 ? surface.OrigPaletteId : image.DefaultPaletteId ?? 0;
+                    palette = portal.ReadFromDat<Palette>(paletteId)?.Colors;
+                }
+
+                pixels = TextureDecode.Decode((uint)image.Format, image.SourceData, width, height, palette);
+
+                if (pixels == null) {
+                    PluginCore.LogFile($"[billboards] texture 0x{images.Textures[images.Textures.Count - 1]:X8} is in "
+                        + $"{image.Format}, which isn't decoded: drawn grey");
                 }
             }
             else {
                 pixels = new[] { 0xFF000000 | surface.ColorValue };
             }
 
-            number = raster.AddTexture(pixels ?? new[] { 0xFF808080u }, pixels == null ? 1 : width,
-                pixels == null ? 1 : height, cutOut);
-            known[surfaceId] = number;
-            return number;
+            if (pixels == null) {
+                width = 1;
+                height = 1;
+                return new[] { 0xFF808080u };
+            }
+
+            return pixels;
         }
 
-        private static Vector3 Vec(UtilityBelt.Common.Messages.Types.Vector3 v) {
+        internal static Vector3 Vec(UtilityBelt.Common.Messages.Types.Vector3 v) {
             return new Vector3(v.X, v.Y, v.Z);
         }
 
-        private static Quaternion Quat(UtilityBelt.Common.Messages.Types.Quaternion q) {
+        internal static Quaternion Quat(UtilityBelt.Common.Messages.Types.Quaternion q) {
             return new Quaternion(q.X, q.Y, q.Z, q.W);
         }
 

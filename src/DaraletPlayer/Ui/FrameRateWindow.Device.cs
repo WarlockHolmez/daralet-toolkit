@@ -94,6 +94,13 @@ namespace DaraletPlayer.Ui {
 
         /// <summary>"address space: 1323 MB free, largest piece 210 MB, 412 pieces of 1 MB or more".</summary>
         private static string AddressSpace() {
+            var (free, largest, pieces) = FreePieces();
+            return $"address space: {free / (1024 * 1024)} MB free, largest piece {largest / (1024 * 1024)} MB, "
+                + $"{pieces} pieces of 1 MB or more";
+        }
+
+        /// <summary>The address space's free room, its largest piece, both in bytes, and its pieces of 1 MB or more.</summary>
+        private static (long Free, long Largest, int Pieces) FreePieces() {
             long free = 0;
             long largest = 0;
             var pieces = 0;
@@ -124,8 +131,7 @@ namespace DaraletPlayer.Ui {
                 at = new IntPtr(unchecked((int)(uint)next));
             }
 
-            return $"address space: {free / (1024 * 1024)} MB free, largest piece {largest / (1024 * 1024)} MB, "
-                + $"{pieces} pieces of 1 MB or more";
+            return (free, largest, pieces);
         }
 
         [StructLayout(LayoutKind.Sequential)]

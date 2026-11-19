@@ -17,6 +17,11 @@ namespace DaraletPlayer.Ui {
         /// <summary>When the next step up may be taken.</summary>
         private DateTime nextStepAt = DateTime.MinValue;
 
+        /// <summary>When you last logged in or came out of a portal: steps are small for a while after.</summary>
+        private DateTime arrivedAt = DateTime.UtcNow;
+
+        private bool wasLoggedIn;
+
         /// <summary>When the last step up was taken, and when the game last took over HitchMs over a frame.</summary>
         private DateTime lastStepAt = DateTime.MinValue;
         private DateTime lastHitchAt = DateTime.MinValue;
@@ -71,12 +76,26 @@ namespace DaraletPlayer.Ui {
             CoreManager.Current.CharacterFilter.ChangePortalMode -= CharacterFilter_ChangePortalMode;
         }
 
+        /// <summary>
+        /// Whether portal space takes the draw distance back to the game's (a test run's `set portalreload 0` turns it off,
+        /// to see whether that reload, in the same second as the game's own load of where you're going, is what
+        /// crashed a teleport, November 2026).
+        /// </summary>
+        internal static bool PortalReload = true;
+
         private void CharacterFilter_ChangePortalMode(object sender, ChangePortalModeEventArgs e) {
             try {
+                if (!PortalReload) {
+                    PluginCore.LogFile("[draw-distance] portal space: left as it is (portal reload off)");
+                    return;
+                }
+
                 inPortal = e.Type == PortalEventType.EnterPortal;
 
-                // out of portal space, the place you've come to loads at the game's size first, then steps up
-                nextStepAt = DateTime.UtcNow.AddSeconds(DrawDistanceRamp.StepSeconds);
+                // out of portal space, the place you've come to loads at the game's size first, then steps up, gently
+                // while the world streams in (DrawDistanceRamp.Cautious...)
+                arrivedAt = DateTime.UtcNow;
+                nextStepAt = arrivedAt.AddSeconds(DrawDistanceRamp.CautiousWaitSeconds);
                 PluginCore.LogFile(inPortal ? "[draw-distance] portal space: the game's own until you're out"
                     : "[draw-distance] out of portal space: stepping up again");
                 Soon();
@@ -95,6 +114,18 @@ namespace DaraletPlayer.Ui {
             var goingUp = targetScenery > scenery || targetLandscape > landscape;
             var now = DateTime.UtcNow;
 
+            // login: the moment the character's in, the same gentle start as out of a portal
+            var loggedIn = CoreManager.Current.CharacterFilter.LoginStatus == 3;
+
+            if (loggedIn && !wasLoggedIn) {
+                arrivedAt = now;
+                nextStepAt = now.AddSeconds(DrawDistanceRamp.CautiousWaitSeconds);
+                PluginCore.LogFile("[draw-distance] logged in: stepping up gently");
+            }
+
+            wasLoggedIn = loggedIn;
+            var cautious = (now - arrivedAt).TotalSeconds < DrawDistanceRamp.CautiousSeconds;
+
             // the last step's loading done: its time gone by, and a second without a slow frame
             var settled = now >= nextStepAt && DrawDistanceRamp.MayStep(
                 (now - lastStepAt).TotalSeconds, (now - lastHitchAt).TotalSeconds);
@@ -103,8 +134,12 @@ namespace DaraletPlayer.Ui {
                 return (Math.Min(scenery, targetScenery), Math.Min(landscape, targetLandscape));
             }
 
-            var next = (DrawDistanceRamp.Next(scenery, targetScenery, DrawDistanceRamp.SceneryStep),
-                DrawDistanceRamp.Next(landscape, targetLandscape, DrawDistanceRamp.LandscapeStep));
+            var next = (
+                DrawDistanceRamp.Next(scenery, targetScenery,
+                    cautious ? DrawDistanceRamp.CautiousSceneryStep : DrawDistanceRamp.SceneryStep),
+                DrawDistanceRamp.Next(landscape, targetLandscape,
+                    cautious ? DrawDistanceRamp.CautiousLandscapeStep : DrawDistanceRamp.LandscapeStep));
+            next = DrawDistanceRamp.OneAtATime(scenery, landscape, next.Item1, next.Item2);
 
             if (next.Item1 > scenery || next.Item2 > landscape) {
                 lastStepAt = now;

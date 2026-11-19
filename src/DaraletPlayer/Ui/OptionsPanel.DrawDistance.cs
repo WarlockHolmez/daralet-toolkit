@@ -11,24 +11,120 @@ namespace DaraletPlayer.Ui {
     /// </summary>
     internal sealed partial class OptionsPanel {
         private readonly DrawDistance drawDistance;
+        private readonly DepthShading depthShading;
+        private readonly Grass grass;
         private readonly FrameRateWindow frameRate;
         private readonly TestRunner testRunner;
 
         /// <summary>Each draw distance slider's value while it's held: used once let go.</summary>
         private int? draggingScenery;
+        private int? draggingGround;
+        private int? draggingFarTrees;
         private int? draggingDensity;
         private int? draggingLandscape;
         private int? draggingDetail;
         private int? draggingFar;
         private int? draggingFog;
 
+        /// <summary>
+        /// The Options window's Config page: the plugin's graphics settings as one group, as the game's are.
+        /// </summary>
         private void RenderDrawDistance() {
+            RefreshDraft();
             Widgets.TextColored(HeadingColor, "Draw Distance (Daralet Toolkit)");
-            var options = settings.Data.DrawDistance;
+
+            if (!RenderDistanceSwitch()) {
+                return;
+            }
+
+            if (!Form.BeginForm("draw-distance-form")) {
+                return;
+            }
+
+            RenderFrameRateRow();
+            RenderDistanceRows();
+            RenderFogRow();
+            RenderShading();
+            RenderWater();
+            RenderGrass();
+            RenderImage();
+            ImGui.EndTable();
+            RenderApplyRow();
+        }
+
+        /// <summary>
+        /// The Config tab's Graphics sub tab (the user's call, November 2026: every graphics setting the plugin adds in
+        /// one place, as well as on the Options window's Config page): the same rows, in sections.
+        /// </summary>
+        public void RenderGraphics() {
+            RefreshDraft();
+            Form.Section("Budget");
+            RenderBudget();
+            RenderApplyRow();
+
+            if (Form.BeginForm("graphics-frame-rate")) {
+                RenderFrameRateRow();
+                ImGui.EndTable();
+            }
+
+            Form.Section("View Distance");
+
+            if (RenderDistanceSwitch() && Form.BeginForm("graphics-view")) {
+                RenderViewRows();
+                RenderFogRow();
+                ImGui.EndTable();
+            }
+
+            Form.Section("Trees and Scenery");
+
+            if (Form.BeginForm("graphics-trees")) {
+                RenderTreeRows();
+                ImGui.EndTable();
+            }
+
+            Form.Section("Model Detail");
+
+            if (Form.BeginForm("graphics-models")) {
+                RenderModelRows();
+                ImGui.EndTable();
+            }
+
+            Form.Section("Lighting");
+
+            if (Form.BeginForm("graphics-lighting")) {
+                RenderShading();
+                ImGui.EndTable();
+            }
+
+            Form.Section("Water");
+
+            if (Form.BeginForm("graphics-water")) {
+                RenderWater();
+                ImGui.EndTable();
+            }
+
+            Form.Section("Grass");
+
+            if (Form.BeginForm("graphics-grass")) {
+                RenderGrass();
+                ImGui.EndTable();
+            }
+
+            Form.Section("Image");
+
+            if (Form.BeginForm("graphics-image")) {
+                RenderImage();
+                ImGui.EndTable();
+            }
+        }
+
+        /// <summary>Draw distance's problem or memory warning, and its on switch; false when there's nothing more.</summary>
+        private bool RenderDistanceSwitch() {
+            var options = DrawDistanceSettings;
 
             if (drawDistance.Problem != null) {
                 WarningText(drawDistance.Problem);
-                return;
+                return false;
             }
 
             RenderMemoryWarning(options);
@@ -38,17 +134,68 @@ namespace DaraletPlayer.Ui {
                 Changed();
             }
 
-            if (!Form.BeginForm("draw-distance-form")) {
-                return;
-            }
+            return true;
+        }
 
+        private void RenderFrameRateRow() {
             Form.Label("Frame Rate", "The game's frame rate, with before and after each change here. Also logged to "
                 + "Frame Rate Logs.");
             frameRate.Window.RenderCompactControls("Shows the Frame Rate window.");
+        }
 
+        /// <summary>Every draw distance row, for the Options window's Config page.</summary>
+        private void RenderDistanceRows() {
+            RenderViewRows();
+            RenderTreeRows();
+            RenderModelRows();
+        }
+
+        /// <summary>How far: Landscape and Ground detail.</summary>
+        private void RenderViewRows() {
+            var options = DrawDistanceSettings;
+            var shown = Previewed();
             ImGui.BeginDisabled(!options.On);
 
-            Form.Label("Scenery", "How many landblocks out have trees. The game's is 1. Kept 2 inside Landscape.");
+            Form.Label("Landscape", "How many landblocks out the land is drawn. The game's goes up to 15. Costs memory "
+                + "more than frame rate.");
+            var landscape = draggingLandscape ?? options.ClampedLandscapeRadius;
+
+            if (DragSlider("##draw-distance-landscape", ref landscape, 0, DrawDistanceOptions.MaxLandscapeRadius,
+                landscape == 0 ? "The game's" : "%d landblocks", ref draggingLandscape, SliderWithCost)) {
+                options.LandscapeRadius = landscape < DrawDistanceOptions.MinLandscapeRadius && landscape > 0
+                    ? DrawDistanceOptions.MinLandscapeRadius : landscape;
+                Changed();
+            }
+
+            var game = drawDistance.GameLandscape;
+            CostNote(GraphicsCost.Landscape(shown.ClampedLandscapeRadius > 0 ? shown.ClampedLandscapeRadius : game,
+                game));
+
+            Form.Label("Ground detail", "How many landblocks out the ground is drawn in full detail, so roads and "
+                + "shores show. Past Scenery it has no trees of the game's: billboards and 3D trees stand in. Costs "
+                + "frame rate.");
+            var ground = draggingGround ?? options.ClampedGroundRadius;
+            var groundFormat = ground <= options.ClampedSceneryRadius ? "%d (with Scenery)" : "%d landblocks";
+
+            if (DragSlider("##draw-distance-ground", ref ground, DrawDistanceOptions.GameSceneryRadius,
+                DrawDistanceOptions.MaxSceneryRadius, groundFormat, ref draggingGround, SliderWithCost)) {
+                options.GroundRadius = ground;
+                Changed();
+            }
+
+            CostNote(GraphicsCost.Ground(shown.ClampedGroundRadius, shown.ClampedSceneryRadius));
+            ImGui.EndDisabled();
+        }
+
+        /// <summary>The game's trees, and what stands in for them further out.</summary>
+        private void RenderTreeRows() {
+            var options = DrawDistanceSettings;
+            var shown = Previewed();
+            var landscapeShown = drawDistance.LandscapeFor(shown);
+            ImGui.BeginDisabled(!options.On);
+
+            Form.Label("Scenery", "How many landblocks out have the game's own trees. The game's is 1; past 2 they "
+                + "cost a lot of both. Kept 2 inside Landscape.");
             var scenery = draggingScenery ?? options.ClampedSceneryRadius;
 
             // the setting is kept as chosen, so raising Landscape gives it back; the slider says what's used meanwhile
@@ -58,55 +205,89 @@ namespace DaraletPlayer.Ui {
                 : allowed < scenery ? $"%d ({allowed} with Landscape {landscapeInUse})" : "%d landblocks";
 
             if (DragSlider("##draw-distance-scenery", ref scenery, DrawDistanceOptions.GameSceneryRadius,
-                DrawDistanceOptions.MaxSceneryRadius, sceneryFormat, ref draggingScenery)) {
+                DrawDistanceOptions.MaxSceneryRadius, sceneryFormat, ref draggingScenery, SliderWithCost)) {
                 options.SceneryRadius = scenery;
                 Changed();
             }
 
-            Form.Label("Scenery density", "The share of trees, bushes and rocks drawn. Lower is the biggest frame rate "
-                + "gain.");
+            CostNote(GraphicsCost.Scenery(shown.ClampedSceneryRadius, 100));
+
+            Form.Label("Scenery density", "The share of the game's trees, bushes and rocks drawn.");
             var density = draggingDensity ?? options.ClampedSceneryDensity;
 
             if (DragSlider("##draw-distance-density", ref density, DrawDistanceOptions.MinSceneryDensity, 100,
-                density >= 100 ? "100%% (the game's)" : "%d%%", ref draggingDensity)) {
+                density >= 100 ? "100%% (the game's)" : "%d%%", ref draggingDensity, SliderWithCost)) {
                 options.SceneryDensity = density;
                 Changed();
             }
 
-            Form.Label("Landscape", "How many landblocks out the land is drawn. The game's goes up to 15.");
-            var landscape = draggingLandscape ?? options.ClampedLandscapeRadius;
+            CostNote(GraphicsCost.Density(shown.ClampedSceneryRadius, shown.ClampedSceneryDensity));
 
-            if (DragSlider("##draw-distance-landscape", ref landscape, 0, DrawDistanceOptions.MaxLandscapeRadius,
-                landscape == 0 ? "The game's" : "%d landblocks", ref draggingLandscape)) {
-                options.LandscapeRadius = landscape < DrawDistanceOptions.MinLandscapeRadius && landscape > 0
-                    ? DrawDistanceOptions.MinLandscapeRadius : landscape;
+            Form.Label("3D trees", "Rings past Scenery whose trees are drawn as the game's own models, cheaply, "
+                + "before the billboards take over.");
+            var farTrees = draggingFarTrees ?? options.ClampedFarTrees;
+
+            if (DragSlider("##draw-distance-far-trees", ref farTrees, 0, DrawDistanceOptions.MaxFarTrees,
+                farTrees == 0 ? "None" : "%d rings", ref draggingFarTrees, SliderWithCost)) {
+                options.FarTrees = farTrees;
                 Changed();
             }
 
-            Form.Label("Detail", "How far out objects keep their finest model. Costly when raised.");
-            var detail = draggingDetail ?? options.ClampedDetailDistance;
+            CostNote(GraphicsCost.FarTrees(shown.ClampedFarTrees));
 
-            if (DragSlider("##draw-distance-detail", ref detail, DrawDistanceOptions.MinDetailDistance,
-                DrawDistanceOptions.MaxDetailDistance, detail == 0 ? "The game's" : "%d m", ref draggingDetail)) {
-                options.DetailDistance = detail;
-                Changed();
-            }
-
-            Form.Label("Far scenery", "How far out trees stay drawn, in their plainest model, instead of vanishing.");
-            var far = draggingFar ?? options.ClampedLowDetailDistance;
-
-            if (DragSlider("##draw-distance-far", ref far, 0, DrawDistanceOptions.MaxLowDetailDistance,
-                far == 0 ? "The game's" : "%d m", ref draggingFar)) {
-                options.LowDetailDistance = far;
-                Changed();
-            }
-
-            Form.Label("Billboards", "Flat pictures of the trees past Scenery, out to Landscape's edge.");
+            Form.Label("Billboards", "Flat pictures of the trees past the 3D trees, out to Landscape's edge.");
 
             if (ImGui.Checkbox("Draw far trees as billboards##draw-distance-billboards", ref options.Billboards)) {
                 Changed();
             }
 
+            CostNote(GraphicsCost.Billboards(options.Billboards, landscapeShown, shown.ClampedSceneryRadius));
+
+            Form.Label("Far buildings", "Buildings past Ground detail, out to Landscape's edge, drawn as the game's "
+                + "own models. The game only makes them nearby.");
+
+            if (ImGui.Checkbox("Draw far towns##draw-distance-far-buildings", ref options.FarBuildings)) {
+                Changed();
+            }
+
+            CostNote(GraphicsCost.FarBuildings(options.FarBuildings, landscapeShown));
+            ImGui.EndDisabled();
+        }
+
+        /// <summary>How fine models stay with distance.</summary>
+        private void RenderModelRows() {
+            var options = DrawDistanceSettings;
+            var shown = Previewed();
+            ImGui.BeginDisabled(!options.On);
+
+            Form.Label("Detail", "How far out objects keep their finest model. Costly when raised.");
+            var detail = draggingDetail ?? options.ClampedDetailDistance;
+
+            if (DragSlider("##draw-distance-detail", ref detail, DrawDistanceOptions.MinDetailDistance,
+                DrawDistanceOptions.MaxDetailDistance, detail == 0 ? "The game's" : "%d m", ref draggingDetail,
+                SliderWithCost)) {
+                options.DetailDistance = detail;
+                Changed();
+            }
+
+            CostNote(GraphicsCost.Detail(shown.ClampedDetailDistance));
+
+            Form.Label("Far scenery", "How far out trees stay drawn, in their plainest model, instead of vanishing.");
+            var far = draggingFar ?? options.ClampedLowDetailDistance;
+
+            if (DragSlider("##draw-distance-far", ref far, 0, DrawDistanceOptions.MaxLowDetailDistance,
+                far == 0 ? "The game's" : "%d m", ref draggingFar, SliderWithCost)) {
+                options.LowDetailDistance = far;
+                Changed();
+            }
+
+            CostNote(GraphicsCost.FarScenery(shown.ClampedLowDetailDistance));
+            ImGui.EndDisabled();
+        }
+
+        /// <summary>The fog's own row: it works whether or not Draw Distance is on.</summary>
+        private void RenderFogRow() {
+            var options = DrawDistanceSettings;
             Form.Label("Fog", "How thick the distance fog is. Lower pushes it further out.");
             var fog = draggingFog ?? options.ClampedFog;
 
@@ -115,10 +296,8 @@ namespace DaraletPlayer.Ui {
                 options.Fog = fog;
                 Changed();
             }
-
-            ImGui.EndDisabled();
-            ImGui.EndTable();
         }
+
 
         /// <summary>
         /// The game short of memory: why, wrapped to the window, and buttons that turn the far settings down (the
@@ -184,10 +363,5 @@ namespace DaraletPlayer.Ui {
             return true;
         }
 
-        private void Changed() {
-            settings.Changed();
-            drawDistance.Soon();
-            FrameRateWindow.Mark(settings.Data.DrawDistance.Summary());
-        }
     }
 }

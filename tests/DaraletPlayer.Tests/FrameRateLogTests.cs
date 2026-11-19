@@ -23,7 +23,7 @@ namespace DaraletPlayer.Tests {
                 "Scenery 10 at 20%, landscape 24");
             var columns = FrameRateLog.Header.Split(',').Length;
             StringAssert.StartsWith(row, "2026-11-17 20:05:09,second,50.0,50.0,20.0,20.00,0,1890,,,");
-            StringAssert.EndsWith(row, "\"Scenery 10 at 20%, landscape 24\"");
+            StringAssert.EndsWith(row, "\"Scenery 10 at 20%, landscape 24\",,,,,");
             Assert.AreEqual(columns, row.Replace("\"Scenery 10 at 20%, landscape 24\"", "x").Split(',').Length);
         }
 
@@ -32,7 +32,17 @@ namespace DaraletPlayer.Tests {
             var row = FrameRateLog.Change(new DateTime(2026, 11, 17, 20, 5, 9), Steady(10, 5), Steady(25, 5), 1500,
                 "Mark 1");
             StringAssert.Contains(row, ",change,40.0,");
-            StringAssert.EndsWith(row, ",1500,100.0,100.0,Mark 1");
+            StringAssert.EndsWith(row, ",1500,100.0,100.0,Mark 1,,,,,");
+        }
+
+        [TestMethod]
+        public void ASecondRowCarriesTheMemoryReading() {
+            var memory = new MemorySample {
+                UsedMb = 2400, TotalMb = 4096, PrivateMb = 1900, WorkingSetMb = 1200, ManagedMb = 85, LargestFreeMb = 300,
+            };
+            var row = FrameRateLog.Second(new DateTime(2026, 11, 18, 16, 20, 0), Steady(20, 1), 1696, "off", memory);
+            StringAssert.EndsWith(row, ",off,2400,1900,1200,85,300");
+            Assert.AreEqual(FrameRateLog.Header.Split(',').Length, row.Split(',').Length);
         }
 
         [TestMethod]
