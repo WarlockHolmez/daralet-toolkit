@@ -4,7 +4,8 @@ Daralet Toolkit (the player plugin: `DaraletToolkit.dll`, `DaraletPlayer` as its
 Toolkit" wherever players see a name) is a Decal plugin for Asheron's Call, for players on the Daralet server (daralet-ACE). Its sibling, Daralet Admin
 (`../daralet-admin-plugin`), is the staff plugin this one was started from: when something here is unclear, see how it's
 done there. Until v0.7.0 it was called Daralet, its dll `Daralet.dll` (`DaraletPlayer.dll` until v0.1.0),
-and its repo `daralet-player-plugin`; the assembly guid (what Decal knows it by) never changed, and the installer deletes the old dlls. This file is the knowledge that building them took: copy it into any new Daralet Decal plugin and keep it
+and its repo `daralet-player-plugin`; the assembly guid (what Decal knows it by) never changed, and the installer deletes the old dlls. Its Graphics tab (draw distance, far land, billboards, lighting and shadows, water, grass, the Frame Rate window and the
+test runner) became a plugin of its own, Horizon (`../Horizon`), in November 2026: graphics work goes there. This file is the knowledge that building them took: copy it into any new Daralet Decal plugin and keep it
 up to date.
 
 ## The stack
@@ -2043,12 +2044,25 @@ leave nulls out (`PlayerUiProtocol.BuildMessages(..., omitNulls: true)`): each i
   unless the new one is already there. Only startup does it, so a test that asks `DataFolder` for a path doesn't move
   the developer's real folder. Only files a player drops in by hand (`dereth-map.png`, `locations.xml`) are looked for
   next to the dll (`PluginCore.AssemblyDirectory`).
+- **log.txt for crash reports** (`Ui/SessionLog.cs`, `Feed/CrashReport.cs`; the user's call,
+  November 2026: a player's log.txt alone should be enough to look into a crash). Trimmed past 4 MB into log.old.txt at
+  start. `session.txt` holds the game's process id and the session's start, and a clean shutdown deletes it: one left by
+  another process means the last session didn't end cleanly (a hot reload is the same process). A `[session]` header
+  at login: version and screen (Horizon logs its own graphics settings). The crash itself kills the process where no .NET code
+  can catch it, so its address is only in Windows' Application event log: **opt in** (Config, Troubleshooting, "Read the
+  game's crash records", `SettingsData.ReadCrashRecords`, `readCrashRecords`, off to start; the user's call: reading
+  the event log is normal and read-only, but players may wonder), and after an unclean session the plugin asks it, off
+  the game's thread, for acclient.exe's "Application Error" and "Application Hang" entries since then, each a
+  `[crash]` line with the address (0x400000 plus the fault offset) and the nearest of AcClient.Entrypoint's functions at
+  or below it. Not opted in, the log says how to turn it on. `PluginCore.LogFile` is locked for the other thread.
+  Untested in the game when written.
 - **Settings** (`Settings.cs`, what the file holds in `SettingsData.cs`, each window's in `WindowPlacement.cs`) live in
   `settings.json` there: window positions and visibility, and display options. A DataContract reader skips field initialisers, so new settings
   get their defaults in `SetDefaults`, which runs before a file is read as well. Saved two seconds after the last change.
   A renamed setting keeps its old `DataMember` name, or players lose it: the Inventory tab was the Bank tab, so
   `InventoryGrid`, `InventoryShowWorn` and `InventoryLootMarks` are still `bankGrid`, `bankShowWorn` and `bankLootMarks`
-  in the file.
+  in the file. Settings the file has that `SettingsData` doesn't know are kept (`IExtensibleDataObject`) and
+  written back: the graphics settings, which Horizon reads from this file once, the first time it starts.
 - **Text size** (`SettingsData.TextScale`, the Config tab's Look section): `SetWindowFontScale` on the main window and
   every `FloatingWindow` (times the window's own Size, `FloatingWindow.FontScale`). Popups and menus inherit their
   window's scale, but a tooltip is a window of its own drawn at the font's size, so tooltips open with

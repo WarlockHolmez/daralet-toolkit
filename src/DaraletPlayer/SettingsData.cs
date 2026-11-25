@@ -8,9 +8,13 @@ namespace DaraletPlayer {
     /// <summary>
     /// Everything settings.json holds. SetDefaults runs both when one is made and before one is read from the file:
     /// DataContractJsonSerializer runs no constructors or field initialisers, and an older file may not have every setting.
+    /// Settings it doesn't know (the graphics settings, which moved to Horizon) are kept in ExtensionData and written back,
+    /// so Horizon can still bring them over from this file the first time it starts.
     /// </summary>
     [DataContract]
-    public class SettingsData {
+    public class SettingsData : IExtensibleDataObject {
+        public ExtensionDataObject ExtensionData { get; set; }
+
         public const float MinTextScale = 0.5f;
         public const float MaxTextScale = 2.5f;
         public const int MinCombatTextSize = 12;
@@ -320,6 +324,12 @@ namespace DaraletPlayer {
         /// <summary>Escape closes the /dap, Inventory, Bank, Character and Quests windows (EscapeCloses).</summary>
         [DataMember(Name = "escapeClosesWindows")] public bool EscapeClosesWindows;
 
+        /// <summary>
+        /// Whether the plugin reads Windows' crash records for the game at start (Ui/SessionLog.cs): the game's own
+        /// "Application Error" and "Application Hang" entries, into log.txt. Off to start: opt in (the user's call).
+        /// </summary>
+        [DataMember(Name = "readCrashRecords")] public bool ReadCrashRecords;
+
         /// <summary>A window being dragged snaps to the screen's and other windows' edges (WindowSnap).</summary>
         [DataMember(Name = "snapWindows")] public bool SnapWindows;
 
@@ -591,6 +601,7 @@ namespace DaraletPlayer {
             InventoryHotbarMarks = true;
             LfgChatLinks = true;
             EscapeClosesWindows = true;
+            ReadCrashRecords = false;
             SnapWindows = true;
             SnapResize = true;
             SnapResizeGrid = true;
